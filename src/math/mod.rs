@@ -1,4 +1,6 @@
 use k256::Scalar;
+use k256::elliptic_curve::Field;
+use k256::elliptic_curve::rand_core::CryptoRngCore;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial {
@@ -7,6 +9,12 @@ pub struct Polynomial {
 
 impl Polynomial {
     pub fn new(coefficients: Vec<Scalar>) -> Self {
+        Self { coefficients }
+    }
+
+    pub fn random(rng: &mut impl CryptoRngCore, degree: usize) -> Self {
+        let coefficients = (0..=degree).map(|_| Scalar::random(&mut *rng)).collect();
+
         Self { coefficients }
     }
 
