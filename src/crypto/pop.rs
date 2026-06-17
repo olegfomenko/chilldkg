@@ -165,3 +165,108 @@ pub fn chilldkg_pop_verify(pop: &[u8; 64], pubkey_xonly: &[u8; 32], m: u32) -> R
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar(value: u64) -> Scalar {
+        Scalar::from(value)
+    }
+
+    fn pubkey_xonly(secret: Scalar) -> [u8; 32] {
+        compress_point_bip340(secret).unwrap().0
+    }
+
+    #[test]
+    fn generated_pop_verifies_for_matching_key_and_index() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let idx = 3;
+        let pop = chilldkg_pop_sign(&seed, a0, idx).unwrap();
+        let pubkey = pubkey_xonly(a0);
+
+        chilldkg_pop_verify(&pop, &pubkey, idx).unwrap();
+    }
+
+    #[test]
+    fn generated_pop_is_deterministic_for_same_inputs() {
+        let seed = [9u8; 32];
+        let a0 = scalar(123);
+        let idx = 1;
+
+        assert_eq!(
+            chilldkg_pop_sign(&seed, a0, idx).unwrap(),
+            chilldkg_pop_sign(&seed, a0, idx).unwrap()
+        );
+    }
+
+    #[test]
+    fn generated_pop_changes_with_seed() {
+        let a0 = scalar(42);
+        let idx = 3;
+
+        assert_ne!(
+            chilldkg_pop_sign(&[1u8; 32], a0, idx).unwrap(),
+            chilldkg_pop_sign(&[2u8; 32], a0, idx).unwrap()
+        );
+    }
+
+    #[test]
+    fn verification_rejects_wrong_index() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
+        let pubkey = pubkey_xonly(a0);
+
+        assert!(chilldkg_pop_verify(&pop, &pubkey, 4).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_wrong_pubkey() {
+        let seed = [7u8; 32];
+        let pop = chilldkg_pop_sign(&seed, scalar(42), 3).unwrap();
+        let wrong_pubkey = pubkey_xonly(scalar(43));
+
+        assert!(chilldkg_pop_verify(&pop, &wrong_pubkey, 3).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_tampered_public_nonce() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
+        let pubkey = pubkey_xonly(a0);
+
+        pop[0] ^= 1;
+
+        assert!(chilldkg_pop_verify(&pop, &pubkey, 3).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_tampered_response() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
+        let pubkey = pubkey_xonly(a0);
+
+        pop[63] ^= 1;
+
+        assert!(chilldkg_pop_verify(&pop, &pubkey, 3).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_invalid_pubkey_x_coordinate() {
+        let pop = [0u8; 64];
+        let invalid_pubkey = [0xffu8; 32];
+
+        assert!(chilldkg_pop_verify(&pop, &invalid_pubkey, 0).is_err());
+    }
+
+    #[test]
+    fn signing_rejects_zero_secret() {
+        let seed = [7u8; 32];
+
+        assert!(chilldkg_pop_sign(&seed, Scalar::ZERO, 0).is_err());
+    }
+}
