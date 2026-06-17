@@ -71,7 +71,7 @@ pub fn self_pad(s_i: &Scalar, r_i: &Scalar, context: &[u8]) -> Scalar {
 /// ctx_j = uint32_be(j) || context
 ///
 /// if j == idx:
-///     pad_{idx,j} = self_pad(s_idx, R_idx, ctx_j)
+///     pad_{idx,j} = self_pad(s_idx, r_idx, ctx_j)
 /// else:
 ///     pad_{idx,j} = ecdh_send_pad(r_idx, P_j, ctx_j)
 ///
@@ -110,4 +110,46 @@ pub fn encrypt(
     }
 
     Ok(ciphertexts)
+}
+
+/// Encrypts aggregated VSS shares for this participant
+///
+/// ctx_idx = uint32_be(idx) || context
+///
+/// if j == idx:
+///     pad_{j, idx} = self_pad(s_idx, r_idx, ctx_idx)
+/// else:
+///     pad_{j, idx} = ecdh_receive_pad(s_idx, R_j, ctx_idx)
+///
+/// aggr_shares = aggr_ciphertexts - pads
+pub fn decrypt(
+    r_idx: &Scalar,
+    s_idx: &Scalar,
+    R: &[ProjectivePoint],
+    context: &[u8],
+    idx: usize,
+    aggr_ciphertexts: &Scalar,
+) -> Result<Scalar> {
+    ensure!(
+        idx < R.len(),
+        "Encryption failed: participant index out of range"
+    );
+
+    let mut aggr_pads = Scalar::ZERO;
+
+    let mut context_idx = Vec::with_capacity(4 + context.len());
+    context_idx.extend_from_slice(&(idx as u32).to_be_bytes());
+    context_idx.extend_from_slice(context);
+
+    for (j, R_j) in R.iter().enumerate() {
+        let pad = if j == idx {
+            self_pad(s_idx, r_idx, &context_idx)
+        } else {
+            ecdh_receive_pad(s_idx, R_j, &context_idx)
+        };
+
+        aggr_pads += pad;
+    }
+
+    Ok(aggr_ciphertexts - &aggr_pads)
 }
