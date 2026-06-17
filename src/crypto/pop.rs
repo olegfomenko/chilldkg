@@ -33,7 +33,7 @@ use k256::{FieldBytes, ProjectivePoint, Scalar, U256};
 /// pop = R_x || bytes(s)
 pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]> {
     ensure!(
-        bool::from(a0.is_zero()),
+        !bool::from(a0.is_zero()),
         "PoP generation failed: BIP340: a0 is zero"
     );
 
@@ -58,7 +58,7 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]
     )));
 
     ensure!(
-        bool::from(k.is_zero()),
+        !bool::from(k.is_zero()),
         "PoP generation failed: BIP340: nonce is zero"
     );
 
@@ -120,14 +120,14 @@ pub fn chilldkg_pop_verify(pop: &[u8; 64], pubkey_xonly: &[u8; 32], m: u32) -> R
     let r = ProjectivePoint::GENERATOR * s - p * e;
 
     ensure!(
-        bool::from(r.is_identity()),
+        !bool::from(r.is_identity()),
         "PoP generation failed: BIP340: r is identity"
     );
 
     let r_affine = r.to_affine();
 
     ensure!(
-        bool::from(r_affine.y_is_odd()),
+        !bool::from(r_affine.y_is_odd()),
         "PoP generation failed: BIP340: r is odd"
     );
 
