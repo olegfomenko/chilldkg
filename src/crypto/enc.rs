@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 /// Then, puts pad_{i,j} =
 ///     H_tag(
 ///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || R_i || P_j
+///         ecdh_key || R_i || P_j || context
 ///     ) mod n
 pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(P_j * r_i)));
@@ -30,7 +30,7 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sca
 /// Then, puts pad_{j,i} =
 ///     H_tag(
 ///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || R_j || P_i
+///         ecdh_key || R_j || P_i || context
 ///     ) mod n
 pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(R_j * s_i)));
@@ -51,12 +51,12 @@ pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> 
 ///         "BIP DKG/encaps_multi self_pad",
 ///         S_i || R_i || ctx_i
 ///     ) mod n
-pub fn self_pad(s_i: &Scalar, r_i: &Scalar, context: &[u8]) -> Scalar {
+pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> Scalar {
     let seckey_bytes: [u8; 32] = s_i.to_bytes().into();
 
     let mut data = Vec::with_capacity(32 + 33 + context.len());
     data.extend_from_slice(&seckey_bytes);
-    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
+    data.extend_from_slice(&compress_default(R_i));
     data.extend_from_slice(context);
 
     Scalar::reduce(U256::from_be_slice(&tagged_hash(
@@ -71,7 +71,7 @@ pub fn self_pad(s_i: &Scalar, r_i: &Scalar, context: &[u8]) -> Scalar {
 /// ctx_j = uint32_be(j) || context
 ///
 /// if j == idx:
-///     pad_{idx,j} = self_pad(s_idx, r_idx, ctx_j)
+///     pad_{idx,j} = self_pad(s_idx, R_idx, ctx_j)
 /// else:
 ///     pad_{idx,j} = ecdh_send_pad(r_idx, P_j, ctx_j)
 ///
@@ -93,6 +93,8 @@ pub fn encrypt(
         "Encryption failed: number of shares must match number of encryption keys"
     );
 
+    let R_idx = ProjectivePoint::GENERATOR * r_idx;
+
     let mut ciphertexts = Vec::with_capacity(shares.len());
 
     for (j, (share, P_j)) in shares.iter().copied().zip(P.iter()).enumerate() {
@@ -101,9 +103,9 @@ pub fn encrypt(
         context_j.extend_from_slice(context);
 
         let pad = if j == idx {
-            self_pad(s_idx, r_idx, &context_j)
+            self_pad(s_idx, &R_idx, &context_j)
         } else {
-            ecdh_send_pad(s_idx, P_j, &context_j)
+            ecdh_send_pad(r_idx, P_j, &context_j)
         };
 
         ciphertexts.push(share + pad);
@@ -117,13 +119,12 @@ pub fn encrypt(
 /// ctx_idx = uint32_be(idx) || context
 ///
 /// if j == idx:
-///     pad_{j, idx} = self_pad(s_idx, r_idx, ctx_idx)
+///     pad_{j, idx} = self_pad(s_idx, R_idx, ctx_idx)
 /// else:
 ///     pad_{j, idx} = ecdh_receive_pad(s_idx, R_j, ctx_idx)
 ///
 /// aggr_shares = aggr_ciphertexts - pads
 pub fn decrypt(
-    r_idx: &Scalar,
     s_idx: &Scalar,
     R: &[ProjectivePoint],
     context: &[u8],
@@ -143,7 +144,7 @@ pub fn decrypt(
 
     for (j, R_j) in R.iter().enumerate() {
         let pad = if j == idx {
-            self_pad(s_idx, r_idx, &context_idx)
+            self_pad(s_idx, R_j, &context_idx)
         } else {
             ecdh_receive_pad(s_idx, R_j, &context_idx)
         };
@@ -151,5 +152,5 @@ pub fn decrypt(
         aggr_pads += pad;
     }
 
-    Ok(aggr_ciphertexts - &aggr_pads)
+    Ok(*aggr_ciphertexts - aggr_pads)
 }
