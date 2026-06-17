@@ -1,3 +1,6 @@
+pub mod pop;
+pub mod tags;
+
 use sha2::{Digest, Sha256};
 
 pub fn tagged_hash(tag: impl AsRef<[u8]>, x: impl AsRef<[u8]>) -> [u8; 32] {

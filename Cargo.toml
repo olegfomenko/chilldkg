@@ -7,3 +7,4 @@ edition = "2024"
 k256 = { version = "0.13", features = ["arithmetic", "expose-field", "hash2curve"], default-features = false }
 curve25519-dalek = { version = "=4.1.3", features = ["rand_core"] }
 sha2 = { version = "0.11", default-features = false }
+anyhow = "1.0.102"
