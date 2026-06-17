@@ -9,11 +9,11 @@ pub fn compress_point_bip340(x: Scalar) -> anyhow::Result<([u8; 32], Scalar)> {
         bail!("BIP340: can't compress for zero scalar");
     }
 
-    let p = ProjectivePoint::GENERATOR * x;
-    let p_x: [u8; 32] = p.to_affine().x().into();
+    let p = (ProjectivePoint::GENERATOR * x).to_affine();
+    let p_x: [u8; 32] = p.x().into();
 
     // BIP340 key normalization.
-    if bool::from(p.to_affine().y_is_odd()) {
+    if bool::from(p.y_is_odd()) {
         Ok((p_x, -x))
     } else {
         Ok((p_x, x))

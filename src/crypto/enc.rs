@@ -1,60 +1,44 @@
 use crate::crypto::ec::compress_default;
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
+use anyhow::{Result, ensure};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
 use sha2::{Digest, Sha256};
 
-/// ChillDKG ECDH pad.
+/// ChillDKG ECDH sending pad.
 ///
-/// Sender:
-/// seckey = r_i
-/// my_pubkey = R_i
-/// their_pubkey = P_j
-/// sending = true
-///
-/// Receiver:
-/// seckey = S_j
-/// my_pubkey = P_j
-/// their_pubkey = R_i
-/// sending = false
-///
-/// Puts ecdh_key = SHA256(compressed(their_pubkey * seckey))
-/// Then, puts pad_{i,i} =
+/// Puts ecdh_key = SHA256(compressed(r_i * P_j))
+/// Then, puts pad_{i,j} =
 ///     H_tag(
 ///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || my_pubkey || their_pubkey
+///         ecdh_key || R_i || P_j
 ///     ) mod n
-/// if sending, and puts pad_{i,i} =
-///     H_tag(
-///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || their_pubkey || my_pubkey
-///     ) mod n
-/// otherwise.
-pub fn ecdh_pad(
-    seckey: &Scalar,
-    my_pubkey: &ProjectivePoint,
-    their_pubkey: &ProjectivePoint,
-    context: &[u8],
-    sending: bool,
-) -> Scalar {
-    let ecdh_bytes = Sha256::digest(compress_default(&(their_pubkey * seckey)));
-    let my_pubkey = compress_default(&my_pubkey);
-    let their_pubkey = compress_default(&their_pubkey);
-
+pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Scalar {
+    let ecdh_bytes = Sha256::digest(compress_default(&(P_j * r_i)));
     let mut data = Vec::with_capacity(32 + 33 + 33 + context.len());
     data.extend_from_slice(&ecdh_bytes);
-
-    if sending {
-        data.extend_from_slice(&my_pubkey); // R_i
-        data.extend_from_slice(&their_pubkey); // P_j
-    } else {
-        data.extend_from_slice(&their_pubkey); // R_i
-        data.extend_from_slice(&my_pubkey); // P_j
-    }
-
+    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
+    data.extend_from_slice(&compress_default(&P_j));
     data.extend_from_slice(context);
+    Scalar::reduce(U256::from_be_slice(&tagged_hash(TAG_ENCPEDPOP_ECDH, data)))
+}
 
+/// ChillDKG ECDH receiving pad.
+///
+/// Puts ecdh_key = SHA256(compressed(s_i * R_j))
+/// Then, puts pad_{j,i} =
+///     H_tag(
+///         "BIP DKG/encpedpop ecdh",
+///         ecdh_key || R_j || P_i
+///     ) mod n
+pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> Scalar {
+    let ecdh_bytes = Sha256::digest(compress_default(&(R_j * s_i)));
+    let mut data = Vec::with_capacity(32 + 33 + 33 + context.len());
+    data.extend_from_slice(&ecdh_bytes);
+    data.extend_from_slice(&compress_default(&R_j));
+    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * s_i)));
+    data.extend_from_slice(context);
     Scalar::reduce(U256::from_be_slice(&tagged_hash(TAG_ENCPEDPOP_ECDH, data)))
 }
 
@@ -67,22 +51,63 @@ pub fn ecdh_pad(
 ///         "BIP DKG/encaps_multi self_pad",
 ///         S_i || R_i || ctx_i
 ///     ) mod n
-///
-/// where:
-/// S_i   = 32-byte host secret key scalar
-/// R_i   = compressed 33-byte public encryption nonce
-/// ctx_i = uint32_be(i) || ctx
-pub fn self_pad(seckey: &Scalar, nonce: &ProjectivePoint, context: &[u8]) -> Scalar {
-    let seckey_bytes: [u8; 32] = seckey.to_bytes().into();
-    let nonce_bytes = compress_default(&nonce);
+pub fn self_pad(s_i: &Scalar, r_i: &Scalar, context: &[u8]) -> Scalar {
+    let seckey_bytes: [u8; 32] = s_i.to_bytes().into();
 
     let mut data = Vec::with_capacity(32 + 33 + context.len());
     data.extend_from_slice(&seckey_bytes);
-    data.extend_from_slice(&nonce_bytes);
+    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
     data.extend_from_slice(context);
 
     Scalar::reduce(U256::from_be_slice(&tagged_hash(
         TAG_ENCAPS_MULTI_SELF_PAD,
         data,
     )))
+}
+
+/// Encrypts this participant's VSS shares for all recipients.
+///
+/// For each recipient j:
+/// ctx_j = uint32_be(j) || context
+///
+/// if j == idx:
+///     pad_{idx,j} = self_pad(s_idx, R_idx, ctx_j)
+/// else:
+///     pad_{idx,j} = ecdh_send_pad(r_idx, P_j, ctx_j)
+///
+/// ciphertext_j = share_j + pad_{idx,j}
+pub fn encrypt(
+    r_idx: &Scalar,
+    s_idx: &Scalar,
+    P: &[ProjectivePoint],
+    context: &[u8],
+    idx: usize,
+    shares: &[Scalar],
+) -> Result<Vec<Scalar>> {
+    ensure!(
+        idx < P.len(),
+        "Encryption failed: participant index out of range"
+    );
+    ensure!(
+        shares.len() == P.len(),
+        "Encryption failed: number of shares must match number of encryption keys"
+    );
+
+    let mut ciphertexts = Vec::with_capacity(shares.len());
+
+    for (j, (share, P_j)) in shares.iter().copied().zip(P.iter()).enumerate() {
+        let mut context_j = Vec::with_capacity(4 + context.len());
+        context_j.extend_from_slice(&(j as u32).to_be_bytes());
+        context_j.extend_from_slice(context);
+
+        let pad = if j == idx {
+            self_pad(s_idx, r_idx, &context_j)
+        } else {
+            ecdh_send_pad(s_idx, P_j, &context_j)
+        };
+
+        ciphertexts.push(share + pad);
+    }
+
+    Ok(ciphertexts)
 }

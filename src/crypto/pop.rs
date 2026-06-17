@@ -1,7 +1,7 @@
 use crate::crypto::ec::{compress_point_bip340, decompress_point_bip340};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::{Group, PrimeField};
@@ -32,9 +32,10 @@ use k256::{FieldBytes, ProjectivePoint, Scalar, U256};
 /// 6. Serialize result into 64 byte array
 /// pop = R_x || bytes(s)
 pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]> {
-    if bool::from(a0.is_zero()) {
-        bail!("PoP generation failed: BIP340: a0 is zero");
-    }
+    ensure!(
+        bool::from(a0.is_zero()),
+        "PoP generation failed: BIP340: a0 is zero"
+    );
 
     let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, seed);
     let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
@@ -56,9 +57,10 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]
         nonce_preimage,
     )));
 
-    if bool::from(k.is_zero()) {
-        bail!("PoP generation failed: BIP340: nonce is zero");
-    }
+    ensure!(
+        bool::from(k.is_zero()),
+        "PoP generation failed: BIP340: nonce is zero"
+    );
 
     let (r_x, k) = compress_point_bip340(k)?;
 
@@ -117,17 +119,19 @@ pub fn chilldkg_pop_verify(pop: &[u8; 64], pubkey_xonly: &[u8; 32], m: u32) -> R
 
     let r = ProjectivePoint::GENERATOR * s - p * e;
 
-    if bool::from(r.is_identity()) {
-        bail!("PoP verification failed: r is identity");
-    }
+    ensure!(
+        bool::from(r.is_identity()),
+        "PoP generation failed: BIP340: r is identity"
+    );
 
-    let affine = r.to_affine();
+    let r_affine = r.to_affine();
 
-    if bool::from(affine.y_is_odd()) {
-        bail!("PoP verification failed: r is odd");
-    }
+    ensure!(
+        bool::from(r_affine.y_is_odd()),
+        "PoP generation failed: BIP340: r is odd"
+    );
 
-    let computed_r_x: [u8; 32] = affine.x().into();
+    let computed_r_x: [u8; 32] = r_affine.x().into();
 
     if computed_r_x != r_x {
         bail!("PoP verification failed: invalid proof");
