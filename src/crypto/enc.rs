@@ -228,8 +228,7 @@ mod tests {
         let deckeys = [scalar(3), scalar(5), scalar(7)];
         let secnonces = [scalar(11), scalar(13), scalar(17)];
         let enckeys: Vec<ProjectivePoint> = deckeys.iter().copied().map(public_key).collect();
-        let pubnonces: Vec<ProjectivePoint> =
-            secnonces.iter().copied().map(public_key).collect();
+        let pubnonces: Vec<ProjectivePoint> = secnonces.iter().copied().map(public_key).collect();
         let context = b"session-context";
         let shares = [
             [scalar(101), scalar(102), scalar(103)],
@@ -254,16 +253,12 @@ mod tests {
             .collect();
 
         for recipient_idx in 0..deckeys.len() {
-            let aggregated_ciphertext = encrypted
-                .iter()
-                .fold(Scalar::ZERO, |acc, ciphertexts| {
-                    acc + ciphertexts[recipient_idx]
-                });
-            let expected_share = shares
-                .iter()
-                .fold(Scalar::ZERO, |acc, sender_shares| {
-                    acc + sender_shares[recipient_idx]
-                });
+            let aggregated_ciphertext = encrypted.iter().fold(Scalar::ZERO, |acc, ciphertexts| {
+                acc + ciphertexts[recipient_idx]
+            });
+            let expected_share = shares.iter().fold(Scalar::ZERO, |acc, sender_shares| {
+                acc + sender_shares[recipient_idx]
+            });
 
             assert_eq!(
                 decrypt(

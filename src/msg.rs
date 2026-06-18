@@ -1,6 +1,16 @@
 use crate::crypto::pop::SchnorrSignature;
 use k256::{ProjectivePoint, Scalar};
 
+/// Common participant inputs for starting a DKG session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionParamsMsg {
+    /// Ordered participant host public keys P_i.
+    pub host_pubkeys: Vec<ProjectivePoint>,
+
+    /// Threshold t.
+    pub t: u32,
+}
+
 /// Participant -> Coordinator, Step 1.
 ///
 /// pmsg1_i = (C_i, pop_i, R_i, hat_u_{i,1}, ..., hat_u_{i,n})

@@ -35,6 +35,14 @@ pub fn decompress_point_bip340(x: &BIP340XOnlyPubKey) -> Option<ProjectivePoint>
     Some(ProjectivePoint::from(affine))
 }
 
+/// Deserializes a compressed SEC1 secp256k1 point.
+pub fn decompress_default(bytes: &CompressedPubKey) -> Option<ProjectivePoint> {
+    let encoded = k256::EncodedPoint::from_bytes(bytes).ok()?;
+    let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))?;
+
+    Some(ProjectivePoint::from(affine))
+}
+
 /// Default secp256k1 point compression. Outputs 33-byte compressed point.
 pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
     let encoded = point.to_affine().to_encoded_point(true);
