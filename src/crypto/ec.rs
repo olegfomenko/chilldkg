@@ -3,8 +3,11 @@ use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 
+pub type BIP340XOnlyPubKey = [u8; 32];
+pub type CompressedPubKey = [u8; 33];
+
 /// Serializes x * G as x-only point and returns normalizes scalar as well.
-pub fn compress_point_bip340(x: Scalar) -> anyhow::Result<([u8; 32], Scalar)> {
+pub fn compress_point_bip340(x: Scalar) -> anyhow::Result<(BIP340XOnlyPubKey, Scalar)> {
     if bool::from(x.is_zero()) {
         bail!("BIP340: can't compress for zero scalar");
     }
@@ -21,7 +24,7 @@ pub fn compress_point_bip340(x: Scalar) -> anyhow::Result<([u8; 32], Scalar)> {
 }
 
 /// Deserializes BIP340 x-only point
-pub fn decompress_point_bip340(x: &[u8; 32]) -> Option<ProjectivePoint> {
+pub fn decompress_point_bip340(x: &BIP340XOnlyPubKey) -> Option<ProjectivePoint> {
     let mut compressed = [0u8; 33];
     compressed[0] = 0x02; // BIP340 x-only points always mean the even-Y point.
     compressed[1..].copy_from_slice(x);
@@ -33,7 +36,7 @@ pub fn decompress_point_bip340(x: &[u8; 32]) -> Option<ProjectivePoint> {
 }
 
 /// Default secp256k1 point compression. Outputs 33-byte compressed point.
-pub fn compress_default(point: &ProjectivePoint) -> [u8; 33] {
+pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
     let encoded = point.to_affine().to_encoded_point(true);
 
     let mut out = [0u8; 33];

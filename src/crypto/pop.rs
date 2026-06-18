@@ -1,4 +1,4 @@
-use crate::crypto::ec::{compress_point_bip340, decompress_point_bip340};
+use crate::crypto::ec::{BIP340XOnlyPubKey, compress_point_bip340, decompress_point_bip340};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
 use anyhow::{Context, Result, bail, ensure};
@@ -6,6 +6,8 @@ use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::{Group, PrimeField};
 use k256::{FieldBytes, ProjectivePoint, Scalar, U256};
+
+pub type SchnorrSignature = [u8; 64];
 
 /// Generates Proof of Possession:
 /// 1. Prepare values:
@@ -31,7 +33,7 @@ use k256::{FieldBytes, ProjectivePoint, Scalar, U256};
 ///
 /// 6. Serialize result into 64 byte array
 /// pop = R_x || bytes(s)
-pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]> {
+pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<SchnorrSignature> {
     ensure!(
         !bool::from(a0.is_zero()),
         "PoP generation failed: BIP340: a0 is zero"
@@ -89,7 +91,11 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<[u8; 64]
 /// e = H("BIP DKG/pop message/challenge", R_x || P_x || uint32_be(m)) mod n
 /// R = s*G - e*P
 /// accept iff R != infinity, has_even_y(R), and xonly(R) == R_x
-pub fn chilldkg_pop_verify(pop: &[u8; 64], pubkey_xonly: &[u8; 32], m: u32) -> Result<()> {
+pub fn chilldkg_pop_verify(
+    pop: &SchnorrSignature,
+    pubkey_xonly: &BIP340XOnlyPubKey,
+    m: u32,
+) -> Result<()> {
     let mut r_x = [0u8; 32];
     r_x.copy_from_slice(&pop[..32]);
 
