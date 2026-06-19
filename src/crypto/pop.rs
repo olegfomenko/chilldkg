@@ -92,6 +92,11 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<SchnorrS
 /// R = s*G - e*Com
 /// accept iff R != infinity, has_even_y(R), and xonly(R) == R_x
 pub fn chilldkg_pop_verify(pop: &SchnorrSignature, com: &ProjectivePoint, m: u32) -> Result<()> {
+    ensure!(
+        !bool::from(com.is_identity()),
+        "PoP verification failed: commitment is identity"
+    );
+
     let mut r_x = [0u8; 32];
     r_x.copy_from_slice(&pop[..32]);
 
@@ -117,14 +122,14 @@ pub fn chilldkg_pop_verify(pop: &SchnorrSignature, com: &ProjectivePoint, m: u32
 
     ensure!(
         !bool::from(r.is_identity()),
-        "PoP generation failed: BIP340: r is identity"
+        "PoP verification failed: BIP340: r is identity"
     );
 
     let r_affine = r.to_affine();
 
     ensure!(
         !bool::from(r_affine.y_is_odd()),
-        "PoP generation failed: BIP340: r is odd"
+        "PoP verification failed: BIP340: r is odd"
     );
 
     let computed_r_x: [u8; 32] = r_affine.x().into();
