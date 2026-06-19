@@ -89,6 +89,15 @@ pub struct ParticipantStep2TransitionMsg {
     pub aux_rand: [u8; 32],
 }
 
+/// Local transition input for coordinator step 1.
+#[derive(Clone, Debug)]
+pub struct CoordinatorStep1TransitionMsg {
+    /// Ordered participant first-round messages.
+    ///
+    /// Math: `(pmsg1_1, ..., pmsg1_n)`.
+    pub participant_msgs: Vec<ParticipantMsg1>,
+}
+
 /// Participant -> Coordinator, Step 2.
 ///
 /// pmsg2_i = sigma_eq_i
@@ -96,6 +105,15 @@ pub struct ParticipantStep2TransitionMsg {
 pub struct ParticipantMsg2 {
     /// CertEq signature over the equality-check transcript.
     pub sig: SchnorrSignature,
+}
+
+/// Local transition input for coordinator step 2.
+#[derive(Clone, Debug)]
+pub struct CoordinatorStep2TransitionMsg {
+    /// Ordered participant second-round messages.
+    ///
+    /// Math: `(pmsg2_1, ..., pmsg2_n)`.
+    pub participant_msgs: Vec<ParticipantMsg2>,
 }
 
 /// Coordinator -> Participants, Finalize.

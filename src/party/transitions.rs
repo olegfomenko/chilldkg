@@ -1,7 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::crypto::certeq::{get_certeq, get_certeq_transcript, verify_certeq};
-use crate::crypto::ec::{compress_default, tap_tweak_no_script};
+use crate::crypto::ec::{compress_default, eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
@@ -78,19 +78,6 @@ fn validate_coordinator_msg1(
     }
 
     Ok(())
-}
-
-fn pubshare(commitment: &[ProjectivePoint], idx: usize) -> ProjectivePoint {
-    let x = Scalar::from((idx + 1) as u64);
-    let mut x_power = Scalar::ONE;
-    let mut pubshare = ProjectivePoint::IDENTITY;
-
-    for C_k in commitment {
-        pubshare += *C_k * x_power;
-        x_power *= x;
-    }
-
-    pubshare
 }
 
 impl ParticipantState for ParticipantInitialState {
@@ -241,7 +228,7 @@ impl ParticipantState for ParticipantStep1State {
         let mut sum_commitment_tweaked = sum_commitment.clone();
         sum_commitment_tweaked[0] += pubtweak;
 
-        let pubshare_tweaked = pubshare(&sum_commitment_tweaked, self.idx);
+        let pubshare_tweaked = eval_pub_share(&sum_commitment_tweaked, self.idx);
 
         if ProjectivePoint::GENERATOR * secshare != pubshare_tweaked {
             bail!("Received invalid secret share");
@@ -249,7 +236,7 @@ impl ParticipantState for ParticipantStep1State {
 
         let threshold_pubkey = sum_commitment_tweaked[0];
         let pubshares = (0..n)
-            .map(|i| pubshare(&sum_commitment_tweaked, i))
+            .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
         let transcript = get_certeq_transcript(

@@ -14,7 +14,7 @@ pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scal
         !bool::from(p.is_identity()),
         "cannot tap tweak identity point"
     );
-    let tweak = scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, &compress_default(&p).to_vec()))?;
+    let tweak = scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;
     Ok((ProjectivePoint::GENERATOR * tweak, tweak))
 }
 
@@ -27,7 +27,7 @@ pub fn compress_scalar_bip340(x: &Scalar) -> (BIP340XOnlyPubKey, Scalar) {
     if bool::from(p.to_affine().y_is_odd()) {
         (p_x, -x)
     } else {
-        (p_x, x.clone())
+        (p_x, *x)
     }
 }
 
@@ -43,7 +43,7 @@ pub fn event_y_point(point: &ProjectivePoint) -> ProjectivePoint {
     } else if bool::from(point.to_affine().y_is_odd()) {
         -point
     } else {
-        point.clone()
+        *point
     }
 }
 
@@ -62,4 +62,18 @@ pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
     let mut out = [0u8; 33];
     out.copy_from_slice(encoded.as_bytes());
     out
+}
+
+/// Having a list of aggregated commitments, calculate participant's public share
+pub fn eval_pub_share(commitment: &[ProjectivePoint], idx: usize) -> ProjectivePoint {
+    let x = Scalar::from((idx + 1) as u64);
+    let mut x_power = Scalar::ONE;
+    let mut pubshare = ProjectivePoint::IDENTITY;
+
+    for C_k in commitment {
+        pubshare += *C_k * x_power;
+        x_power *= x;
+    }
+
+    pubshare
 }

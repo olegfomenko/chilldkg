@@ -3,7 +3,7 @@ use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
 
-mod transitions;
+pub mod transitions;
 
 pub trait ParticipantState: Sized {
     type Message;
