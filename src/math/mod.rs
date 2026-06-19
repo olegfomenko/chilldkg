@@ -1,8 +1,6 @@
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::TAG_VSS_COEFFS;
-use k256::elliptic_curve::Field;
 use k256::elliptic_curve::ops::Reduce;
-use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{Scalar, U256};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

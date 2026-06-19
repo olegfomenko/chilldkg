@@ -77,6 +77,18 @@ pub struct CoordinatorMsg1 {
     pub enc_secshares: Vec<Scalar>,
 }
 
+/// Local transition input for participant step 2.
+#[derive(Clone, Debug)]
+pub struct ParticipantStep2TransitionMsg {
+    /// Coordinator message from step 1.
+    ///
+    /// Math: `cmsg1`.
+    pub coordinator_msg: CoordinatorMsg1,
+
+    /// Auxiliary randomness for the CertEq signature.
+    pub aux_rand: [u8; 32],
+}
+
 /// Participant -> Coordinator, Step 2.
 ///
 /// pmsg2_i = sigma_eq_i

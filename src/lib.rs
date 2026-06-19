@@ -95,6 +95,50 @@ pub struct ParticipantStep1State {
     pub com_to_secret: ProjectivePoint,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DkgOutput {
+    /// Participant's final secret share.
+    ///
+    /// Math: tweaked secret share `u_i`.
+    pub secshare: Scalar,
+
+    /// Final threshold public key.
+    ///
+    /// Math: tweaked commitment to the aggregate secret, `C_0`.
+    pub threshold_pubkey: ProjectivePoint,
+
+    /// Final participant public shares.
+    ///
+    /// Math: `Y_i`.
+    pub pubshares: Vec<ProjectivePoint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParticipantStep2State {
+    /// Participant index.
+    ///
+    /// Math: `i`.
+    pub idx: usize,
+
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
+    /// Ordered participant host public keys.
+    ///
+    /// Math: `P_i` is the host public key of participant `i`.
+    pub host_pubkeys: Vec<ProjectivePoint>,
+
+    /// Equality-check transcript.
+    ///
+    /// Math: `eq_input`.
+    pub transcript: Vec<u8>,
+
+    /// Participant's DKG output.
+    pub dkg_output: DkgOutput,
+}
+
 impl ParticipantParamsState {
     fn validate_session_params(&self) -> Result<()> {
         ensure!(

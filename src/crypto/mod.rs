@@ -1,3 +1,4 @@
+pub mod certeq;
 pub mod ec;
 pub mod enc;
 pub mod pop;

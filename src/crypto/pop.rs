@@ -1,7 +1,7 @@
-use crate::crypto::ec::{BIP340XOnlyPubKey, compress_point_bip340, decompress_point_bip340};
+use crate::crypto::ec::{compress_point_bip340, compress_scalar_bip340};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::{Group, PrimeField};
@@ -41,7 +41,7 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<SchnorrS
 
     let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, seed);
     let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
-    let (p_x, d) = compress_point_bip340(a0).context("PoP generation failed:")?;
+    let (p_x, d) = compress_scalar_bip340(&a0);
     let mut t: [u8; 32] = d.to_bytes().into();
     for i in 0..32 {
         t[i] ^= aux_hash[i];
@@ -64,7 +64,7 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<SchnorrS
         "PoP generation failed: BIP340: nonce is zero"
     );
 
-    let (r_x, k) = compress_point_bip340(k)?;
+    let (r_x, k) = compress_scalar_bip340(&k);
 
     let mut challenge_preimage = Vec::with_capacity(32 + 32 + 4);
     challenge_preimage.extend_from_slice(&r_x);
@@ -88,14 +88,10 @@ pub fn chilldkg_pop_sign(seed: &[u8; 32], a0: Scalar, m: u32) -> Result<SchnorrS
 ///
 /// Checks:
 /// pop = R_x || s
-/// e = H("BIP DKG/pop message/challenge", R_x || P_x || uint32_be(m)) mod n
-/// R = s*G - e*P
+/// e = H("BIP DKG/pop message/challenge", R_x || Com_x || uint32_be(m)) mod n
+/// R = s*G - e*Com
 /// accept iff R != infinity, has_even_y(R), and xonly(R) == R_x
-pub fn chilldkg_pop_verify(
-    pop: &SchnorrSignature,
-    pubkey_xonly: &BIP340XOnlyPubKey,
-    m: u32,
-) -> Result<()> {
+pub fn chilldkg_pop_verify(pop: &SchnorrSignature, com: &ProjectivePoint, m: u32) -> Result<()> {
     let mut r_x = [0u8; 32];
     r_x.copy_from_slice(&pop[..32]);
 
@@ -107,23 +103,17 @@ pub fn chilldkg_pop_verify(
         bail!("PoP verification failed: invalid s");
     };
 
-    let Some(p) = decompress_point_bip340(pubkey_xonly) else {
-        bail!("PoP verification failed: invalid commitment");
-    };
-
-    let msg = m.to_be_bytes();
-
     let mut challenge_preimage = Vec::with_capacity(32 + 32 + 4);
     challenge_preimage.extend_from_slice(&r_x);
-    challenge_preimage.extend_from_slice(pubkey_xonly);
-    challenge_preimage.extend_from_slice(&msg);
+    challenge_preimage.extend_from_slice(&compress_point_bip340(com));
+    challenge_preimage.extend_from_slice(&m.to_be_bytes());
 
     let e = Scalar::reduce(U256::from_be_slice(&tagged_hash(
         TAG_POP_CHALLENGE,
         challenge_preimage,
     )));
 
-    let r = ProjectivePoint::GENERATOR * s - p * e;
+    let r = ProjectivePoint::GENERATOR * s - com * &e;
 
     ensure!(
         !bool::from(r.is_identity()),
@@ -154,19 +144,14 @@ mod tests {
         Scalar::from(value)
     }
 
-    fn pubkey_xonly(secret: Scalar) -> [u8; 32] {
-        compress_point_bip340(secret).unwrap().0
-    }
-
     #[test]
     fn generated_pop_verifies_for_matching_key_and_index() {
         let seed = [7u8; 32];
         let a0 = scalar(42);
         let idx = 3;
         let pop = chilldkg_pop_sign(&seed, a0, idx).unwrap();
-        let pubkey = pubkey_xonly(a0);
 
-        chilldkg_pop_verify(&pop, &pubkey, idx).unwrap();
+        chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), idx).unwrap();
     }
 
     #[test]
@@ -197,16 +182,15 @@ mod tests {
         let seed = [7u8; 32];
         let a0 = scalar(42);
         let pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-        let pubkey = pubkey_xonly(a0);
 
-        assert!(chilldkg_pop_verify(&pop, &pubkey, 4).is_err());
+        assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 4).is_err());
     }
 
     #[test]
     fn verification_rejects_wrong_pubkey() {
         let seed = [7u8; 32];
         let pop = chilldkg_pop_sign(&seed, scalar(42), 3).unwrap();
-        let wrong_pubkey = pubkey_xonly(scalar(43));
+        let wrong_pubkey = ProjectivePoint::GENERATOR * scalar(43);
 
         assert!(chilldkg_pop_verify(&pop, &wrong_pubkey, 3).is_err());
     }
@@ -216,11 +200,10 @@ mod tests {
         let seed = [7u8; 32];
         let a0 = scalar(42);
         let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-        let pubkey = pubkey_xonly(a0);
 
         pop[0] ^= 1;
 
-        assert!(chilldkg_pop_verify(&pop, &pubkey, 3).is_err());
+        assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 3).is_err());
     }
 
     #[test]
@@ -228,19 +211,10 @@ mod tests {
         let seed = [7u8; 32];
         let a0 = scalar(42);
         let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-        let pubkey = pubkey_xonly(a0);
 
         pop[63] ^= 1;
 
-        assert!(chilldkg_pop_verify(&pop, &pubkey, 3).is_err());
-    }
-
-    #[test]
-    fn verification_rejects_invalid_pubkey_x_coordinate() {
-        let pop = [0u8; 64];
-        let invalid_pubkey = [0xffu8; 32];
-
-        assert!(chilldkg_pop_verify(&pop, &invalid_pubkey, 0).is_err());
+        assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 3).is_err());
     }
 
     #[test]
