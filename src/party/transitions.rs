@@ -12,8 +12,8 @@ use crate::msg::{
     CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, ParticipantStep1TransitionMsg,
     ParticipantStep2TransitionMsg, SessionParamsMsg,
 };
-use crate::{
-    DkgOutput, ParticipantInitialState, ParticipantParamsState, ParticipantState,
+use crate::party::{
+    DKGOutput, ParticipantInitialState, ParticipantParamsState, ParticipantState,
     ParticipantStep1State, ParticipantStep2State,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -262,7 +262,7 @@ impl ParticipantState for ParticipantStep1State {
 
         let sig = get_certeq(self.s, self.idx, &transcript, &msg.aux_rand)?;
 
-        let dkg_output = DkgOutput {
+        let dkg_output = DKGOutput {
             idx: self.idx,
             t: self.t,
             secshare,
@@ -286,7 +286,7 @@ impl ParticipantState for ParticipantStep1State {
 impl ParticipantState for ParticipantStep2State {
     type Message = CoordinatorMsg2;
     type Next = Self;
-    type Output = (DkgOutput, RecoveryData);
+    type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         ensure!(

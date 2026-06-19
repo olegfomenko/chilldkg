@@ -10,10 +10,9 @@ use crate::crypto::tags::{
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use anyhow::{Context, Result, bail, ensure};
 use k256::elliptic_curve::Group;
-use k256::elliptic_curve::PrimeField;
 use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
-use k256::{FieldBytes, ProjectivePoint, Scalar, U256};
+use k256::{ProjectivePoint, Scalar, U256};
 
 /// Builds a transcript bytes. Then, this transcript hash will be signed to create
 /// a certificate of equality. This data contains public transcript received by participant
