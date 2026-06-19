@@ -1,8 +1,7 @@
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
-use std::collections::HashMap;
 
 pub mod crypto;
 pub mod math;
@@ -21,7 +20,14 @@ pub trait ParticipantState: Sized {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticipantInitialState {
+    /// Participant index.
+    ///
+    /// Math: `i`.
     pub idx: usize,
+
+    /// Participant host secret key.
+    ///
+    /// Math: `s_i`.
     pub s: Scalar,
 }
 
@@ -35,19 +41,65 @@ impl ParticipantInitialState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticipantParamsState {
+    /// Participant index.
+    ///
+    /// Math: `i`.
     pub idx: usize,
+
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
+    /// Participant host secret key.
+    ///
+    /// Math: `s_i`.
     pub s: Scalar,
 
+    /// Ordered participant host public keys.
+    ///
+    /// Math: `P_i` is the host public key of participant `i`.
+    pub host_pubkeys: Vec<ProjectivePoint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParticipantStep1State {
+    /// Participant index.
+    ///
+    /// Math: `i`.
+    pub idx: usize,
+
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
+    /// Participant host secret key.
+    ///
+    /// Math: `s_i`.
+    pub s: Scalar,
+
+    /// Ordered participant host public keys.
+    ///
+    /// Math: `P_i` is the host public key of participant `i`.
     pub host_pubkeys: Vec<ProjectivePoint>,
 
-    pub t: u32,
+    /// Participant's public encryption nonce.
+    ///
+    /// Math: `R_i`.
+    pub pubnonce: ProjectivePoint,
+
+    /// Participant's commitment to the shared secret.
+    ///
+    /// Math: `C_{i,0}`.
+    pub com_to_secret: ProjectivePoint,
 }
 
 impl ParticipantParamsState {
     fn validate_session_params(&self) -> Result<()> {
         ensure!(
             self.t >= 1
-                && (self.t as usize) <= self.host_pubkeys.len()
+                && self.t <= self.host_pubkeys.len()
                 && self.host_pubkeys.len() <= u32::MAX as usize,
             "ParticipantParamsState: invalid DKG threshold or participant count"
         );

@@ -4,11 +4,21 @@ use k256::{ProjectivePoint, Scalar};
 /// Common participant inputs for starting a DKG session.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionParamsMsg {
-    /// Ordered participant host public keys P_i.
+    /// Ordered participant host public keys.
+    ///
+    /// Math: `P_i` is the host public key of participant `i`.
     pub host_pubkeys: Vec<ProjectivePoint>,
 
     /// Threshold t.
-    pub t: u32,
+    pub t: usize,
+}
+
+/// Local transition input for participant step 1.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParticipantStep1TransitionMsg {
+    /// Fresh 32-byte random value mixed into the participant's deterministic
+    /// EncPedPop seed.
+    pub random: [u8; 32],
 }
 
 /// Participant -> Coordinator, Step 1.
@@ -16,14 +26,17 @@ pub struct SessionParamsMsg {
 /// pmsg1_i = (C_i, pop_i, R_i, hat_u_{i,1}, ..., hat_u_{i,n})
 #[derive(Clone, Debug)]
 pub struct ParticipantMsg1 {
-    /// Participant's VSS commitment C_i.
-    /// C_i = (phi_{i,0}, ..., phi_{i,t-1})
+    /// Participant's VSS commitment.
+    ///
+    /// Math: `C_i = (C_{i,0}, ..., C_{i,t-1})`.
     pub commitment: Vec<ProjectivePoint>,
 
     /// Proof of possession for the free coefficient a_{i,0}.
     pub pop: SchnorrSignature,
 
-    /// Public encryption nonce R_i = r_i * G.
+    /// Public encryption nonce.
+    ///
+    /// Math: `R_i = r_i * G`.
     pub pubnonce: ProjectivePoint,
 
     /// Encrypted shares hat_u_{i,j}, one for each recipient j.
@@ -41,17 +54,22 @@ pub struct ParticipantMsg1 {
 /// )
 #[derive(Clone, Debug)]
 pub struct CoordinatorMsg1 {
-    /// Constant commitments C_{i,0}, one from each participant.
+    /// Constant commitments to participant secrets.
+    ///
+    /// Math: this is `(C_{1,0}, ..., C_{n,0})`.
     pub coms_to_secrets: Vec<ProjectivePoint>,
 
-    /// Aggregated non-constant commitments:
-    /// Cbar_k = sum_i C_{i,k}, for k = 1,...,t-1.
+    /// Aggregated non-constant commitments.
+    ///
+    /// Math: `Cbar_k = sum_i C_{i,k}` for `k = 1, ..., t - 1`.
     pub sum_coms_to_nonconst_terms: Vec<ProjectivePoint>,
 
     /// Proofs of possession pop_i.
     pub pops: Vec<SchnorrSignature>,
 
-    /// Public encryption nonces R_i.
+    /// Public encryption nonces.
+    ///
+    /// Math: this is `(R_1, ..., R_n)`.
     pub pubnonces: Vec<ProjectivePoint>,
 
     /// Aggregated encrypted shares:
