@@ -97,6 +97,16 @@ pub struct ParticipantStep1State {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgOutput {
+    /// Participant index.
+    ///
+    /// Math: `i`.
+    pub idx: usize,
+
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
     /// Participant's final secret share.
     ///
     /// Math: tweaked secret share `u_i`.
@@ -115,16 +125,6 @@ pub struct DkgOutput {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParticipantStep2State {
-    /// Participant index.
-    ///
-    /// Math: `i`.
-    pub idx: usize,
-
-    /// DKG threshold.
-    ///
-    /// Math: `t`.
-    pub t: usize,
-
     /// Ordered participant host public keys.
     ///
     /// Math: `P_i` is the host public key of participant `i`.

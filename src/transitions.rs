@@ -262,13 +262,13 @@ impl ParticipantState for ParticipantStep1State {
         let sig = get_certeq(self.s, self.idx, &transcript, &msg.aux_rand)?;
 
         let dkg_output = DkgOutput {
+            idx: self.idx,
+            t: self.t,
             secshare,
             threshold_pubkey,
             pubshares,
         };
         let next_stage = ParticipantStep2State {
-            idx: self.idx,
-            t: self.t,
             host_pubkeys: self.host_pubkeys,
             transcript,
             dkg_output,
@@ -292,6 +292,6 @@ impl ParticipantState for ParticipantStep2State {
     }
 
     fn encryption_key(&self) -> ProjectivePoint {
-        self.host_pubkeys[self.idx]
+        self.host_pubkeys[self.dkg_output.idx]
     }
 }
