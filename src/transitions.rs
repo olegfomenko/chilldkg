@@ -4,8 +4,8 @@ use crate::crypto::certeq::{get_certeq, get_certeq_transcript};
 use crate::crypto::ec::{compress_default, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
+use crate::crypto::{scalar_from_bytes, tagged_hash};
 use crate::math::Polynomial;
 use crate::msg::{
     CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, ParticipantStep1TransitionMsg,
@@ -17,8 +17,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use k256::elliptic_curve::Group;
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
+use k256::{ProjectivePoint, Scalar};
 
 fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
     let mut enc_context = Vec::with_capacity(4 + 33 * host_pubkeys.len());
@@ -125,14 +124,11 @@ impl ParticipantState for ParticipantParamsState {
         let enc_context = serialize_enc_context(self.t, &self.host_pubkeys);
         let simpl_seed = derive_simpl_seed(&self.s, &msg.random, &enc_context);
 
-        let r = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_ENCPEDPOP_SECNONCE,
-            simpl_seed,
-        )));
+        let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
 
         ensure!(r != Scalar::ZERO, "EncPedPop secret nonce must not be zero");
 
-        let polynomial = Polynomial::new(&simpl_seed, self.t);
+        let polynomial = Polynomial::new(&simpl_seed, self.t)?;
 
         let shares: Vec<Scalar> = (0..self.host_pubkeys.len())
             .map(|i| polynomial.eval(Scalar::from((i + 1) as u64)))
@@ -238,7 +234,7 @@ impl ParticipantState for ParticipantStep1State {
         sum_commitment.push(msg.coordinator_msg.coms_to_secrets.iter().sum());
         sum_commitment.extend_from_slice(&msg.coordinator_msg.sum_coms_to_nonconst_terms);
 
-        let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0]);
+        let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0])?;
         secshare += tweak;
 
         let mut sum_commitment_tweaked = sum_commitment.clone();

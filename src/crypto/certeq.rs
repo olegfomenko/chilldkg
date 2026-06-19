@@ -1,6 +1,6 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::ec::{compress_default, compress_default_with_infinity, compress_scalar_bip340};
+use crate::crypto::ec::{compress_default, compress_scalar_bip340};
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{
@@ -29,7 +29,7 @@ pub fn get_certeq_transcript(
 
     eq_input.extend_from_slice(&(t as u32).to_be_bytes());
     for C_k in sum_commitment {
-        eq_input.extend_from_slice(&compress_default_with_infinity(C_k));
+        eq_input.extend_from_slice(&compress_default(C_k));
     }
     for P_i in host_pubkeys {
         eq_input.extend_from_slice(&compress_default(P_i));

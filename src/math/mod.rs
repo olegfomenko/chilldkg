@@ -1,7 +1,7 @@
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::TAG_VSS_COEFFS;
-use k256::elliptic_curve::ops::Reduce;
-use k256::{Scalar, U256};
+use crate::crypto::{scalar_from_bytes, tagged_hash};
+use anyhow::Result;
+use k256::Scalar;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial {
@@ -9,21 +9,17 @@ pub struct Polynomial {
 }
 
 impl Polynomial {
-    pub fn new(seed: &[u8; 32], t: usize) -> Self {
+    pub fn new(seed: &[u8; 32], t: usize) -> Result<Self> {
         let mut coefficients = Vec::with_capacity(t);
 
         for i in 0..t {
             let mut preimage = Vec::with_capacity(32 + 4);
             preimage.extend_from_slice(seed);
             preimage.extend_from_slice(&(i as u32).to_be_bytes());
-
-            coefficients.push(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-                TAG_VSS_COEFFS,
-                preimage,
-            ))));
+            coefficients.push(scalar_from_bytes(tagged_hash(TAG_VSS_COEFFS, preimage))?);
         }
 
-        Self { coefficients }
+        Ok(Self { coefficients })
     }
 
     pub fn eval(&self, x: Scalar) -> Scalar {

@@ -1,21 +1,21 @@
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::TAG_TAP_TWEAK;
+use crate::crypto::{scalar_from_bytes, tagged_hash};
+use anyhow::{Result, ensure};
 use k256::elliptic_curve::Group;
-use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use k256::{AffinePoint, ProjectivePoint, Scalar, U256};
+use k256::{AffinePoint, ProjectivePoint, Scalar};
 
 pub type BIP340XOnlyPubKey = [u8; 32];
 pub type CompressedPubKey = [u8; 33];
 
-pub fn tap_tweak_no_script(p: &ProjectivePoint) -> (ProjectivePoint, Scalar) {
-    let tweak = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_TAP_TWEAK,
-        &compress_default(&p).to_vec(),
-    )));
-
-    (ProjectivePoint::GENERATOR * tweak, tweak)
+pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
+    ensure!(
+        !bool::from(p.is_identity()),
+        "cannot tap tweak identity point"
+    );
+    let tweak = scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, &compress_default(&p).to_vec()))?;
+    Ok((ProjectivePoint::GENERATOR * tweak, tweak))
 }
 
 /// Serializes x * G as x-only point and returns normalizes scalar as well.
@@ -33,26 +33,17 @@ pub fn compress_scalar_bip340(x: &Scalar) -> (BIP340XOnlyPubKey, Scalar) {
 
 /// Serializes BIP340 x-only point
 pub fn compress_point_bip340(point: &ProjectivePoint) -> BIP340XOnlyPubKey {
-    if bool::from(point.is_identity()) {
-        [0u8; 32]
-    } else {
-        point.to_affine().x().into()
-    }
+    point.to_affine().x().into()
 }
 
-/// Deserializes BIP340 x-only point
-pub fn decompress_point_bip340(x: &BIP340XOnlyPubKey) -> Option<ProjectivePoint> {
-    if *x == [0u8; 32] {
-        Some(ProjectivePoint::IDENTITY)
+/// Forces point to be even-y
+pub fn event_y_point(point: &ProjectivePoint) -> ProjectivePoint {
+    if bool::from(point.is_identity()) {
+        ProjectivePoint::IDENTITY
+    } else if bool::from(point.to_affine().y_is_odd()) {
+        -point
     } else {
-        let mut compressed = [0u8; 33];
-        compressed[0] = 0x02; // BIP340 x-only points always mean the even-Y point.
-        compressed[1..].copy_from_slice(x);
-
-        let encoded = k256::EncodedPoint::from_bytes(compressed).ok()?;
-        let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))?;
-
-        Some(ProjectivePoint::from(affine))
+        point.clone()
     }
 }
 
@@ -71,15 +62,4 @@ pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
     let mut out = [0u8; 33];
     out.copy_from_slice(encoded.as_bytes());
     out
-}
-
-/// Compressed secp256k1 point encoding used by the reference for VSS commitments.
-///
-/// Maps the identity point to 33 zero bytes.
-pub fn compress_default_with_infinity(point: &ProjectivePoint) -> CompressedPubKey {
-    if bool::from(point.is_identity()) {
-        [0u8; 33]
-    } else {
-        compress_default(point)
-    }
 }

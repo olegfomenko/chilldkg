@@ -1,4 +1,4 @@
-use crate::crypto::ec::{compress_point_bip340, compress_scalar_bip340};
+use crate::crypto::ec::{compress_point_bip340, compress_scalar_bip340, event_y_point};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
 use anyhow::{Result, bail, ensure};
@@ -113,7 +113,7 @@ pub fn chilldkg_pop_verify(pop: &SchnorrSignature, com: &ProjectivePoint, m: u32
         challenge_preimage,
     )));
 
-    let r = ProjectivePoint::GENERATOR * s - com * &e;
+    let r = ProjectivePoint::GENERATOR * s - event_y_point(com) * &e;
 
     ensure!(
         !bool::from(r.is_identity()),
