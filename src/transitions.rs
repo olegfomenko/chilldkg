@@ -1,12 +1,13 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::certeq::{get_certeq, get_certeq_transcript};
+use crate::crypto::certeq::{get_certeq, get_certeq_transcript, verify_certeq};
 use crate::crypto::ec::{compress_default, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use crate::math::Polynomial;
+use crate::msg::RecoveryData;
 use crate::msg::{
     CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, ParticipantStep1TransitionMsg,
     ParticipantStep2TransitionMsg, SessionParamsMsg,
@@ -285,10 +286,26 @@ impl ParticipantState for ParticipantStep1State {
 impl ParticipantState for ParticipantStep2State {
     type Message = CoordinatorMsg2;
     type Next = Self;
-    type Output = ();
+    type Output = (DkgOutput, RecoveryData);
 
-    fn next(self, _msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        todo!("participant step 2 state transition is not implemented yet")
+    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+        ensure!(
+            msg.cert.len() == self.host_pubkeys.len(),
+            "CertEq certificate has invalid number of signatures"
+        );
+
+        for (i, (host_pubkey, sig)) in self.host_pubkeys.iter().zip(msg.cert.iter()).enumerate() {
+            verify_certeq(host_pubkey, i, &self.transcript, sig).with_context(|| {
+                format!("CertEq certificate has invalid signature at index {i}")
+            })?;
+        }
+
+        let recovery_data = RecoveryData {
+            transcript: self.transcript,
+            cert: msg.cert,
+        };
+
+        Ok((None, (self.dkg_output, recovery_data)))
     }
 
     fn encryption_key(&self) -> ProjectivePoint {

@@ -122,13 +122,9 @@ pub struct CoordinatorInvestigationMsg {
 /// Recovery data is not a coordinator message by itself, but ChillDKG returns it
 /// after finalization:
 ///
-/// recovery_data = eq_input || cert
+/// recovery_data = transcript || cert
 #[derive(Clone, Debug)]
 pub struct RecoveryData {
-    pub threshold: u32,
-    pub sum_commitment: Vec<ProjectivePoint>,
-    pub host_pubkeys: Vec<ProjectivePoint>,
-    pub pubnonces: Vec<ProjectivePoint>,
-    pub enc_secshares: Vec<Scalar>,
+    pub transcript: Vec<u8>,
     pub cert: Vec<SchnorrSignature>,
 }
