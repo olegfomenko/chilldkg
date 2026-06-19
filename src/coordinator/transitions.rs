@@ -6,86 +6,32 @@ use crate::coordinator::{
 use crate::crypto::certeq::{get_certeq_transcript, verify_certeq_cert};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::msg::{
-    CoordinatorMsg1, CoordinatorMsg2, CoordinatorStep1TransitionMsg, CoordinatorStep2TransitionMsg,
-    RecoveryData,
+    CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
 use anyhow::{Context, Result, ensure};
 use k256::ProjectivePoint;
-use k256::elliptic_curve::Group;
-
-fn validate_participant_msg1(
-    msg: &CoordinatorStep1TransitionMsg,
-    t: usize,
-    n: usize,
-) -> Result<()> {
-    ensure!(
-        msg.participant_msgs.len() == n,
-        "Coordinator step 1 received invalid number of participant messages"
-    );
-
-    for (i, participant_msg) in msg.participant_msgs.iter().enumerate() {
-        ensure!(
-            participant_msg.commitment.len() == t,
-            "Participant {i} sent invalid number of VSS commitments"
-        );
-        ensure!(
-            participant_msg.enc_shares.len() == n,
-            "Participant {i} sent invalid number of encrypted shares"
-        );
-        ensure!(
-            !bool::from(participant_msg.pubnonce.is_identity()),
-            "Participant {i} sent invalid public nonce"
-        );
-
-        for (k, C_k) in participant_msg.commitment.iter().enumerate() {
-            ensure!(
-                !bool::from(C_k.is_identity()),
-                "Participant {i} sent invalid VSS commitment at coefficient {k}"
-            );
-        }
-    }
-
-    Ok(())
-}
 
 impl CoordinatorState for CoordinatorInitialState {
-    type Message = CoordinatorStep1TransitionMsg;
+    type Message = Vec<ParticipantMsg1>;
     type Next = CoordinatorStep1State;
     type Output = CoordinatorMsg1;
 
-    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        validate_participant_msg1(&msg, self.t, self.host_pubkeys.len())?;
+    fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+        self.validate_participant_msg1(&msgs)?;
 
-        let coms_to_secrets: Vec<ProjectivePoint> = msg
-            .participant_msgs
-            .iter()
-            .map(|msg| msg.commitment[0])
-            .collect();
+        let coms_to_secrets: Vec<ProjectivePoint> =
+            msgs.iter().map(|msg| msg.commitment[0]).collect();
 
         let sum_commitment: Vec<ProjectivePoint> = (0..self.t)
-            .map(|i| {
-                msg.participant_msgs
-                    .iter()
-                    .map(|p_msg| p_msg.commitment[i])
-                    .sum()
-            })
+            .map(|i| msgs.iter().map(|p_msg| p_msg.commitment[i]).sum())
             .collect();
 
-        let pops = msg.participant_msgs.iter().map(|p_msg| p_msg.pop).collect();
+        let pops = msgs.iter().map(|p_msg| p_msg.pop).collect();
 
-        let pubnonces = msg
-            .participant_msgs
-            .iter()
-            .map(|p_msg| p_msg.pubnonce)
-            .collect();
+        let pubnonces = msgs.iter().map(|p_msg| p_msg.pubnonce).collect();
 
         let enc_secshares = (0..self.host_pubkeys.len())
-            .map(|i| {
-                msg.participant_msgs
-                    .iter()
-                    .map(|p_msg| p_msg.enc_shares[i])
-                    .sum()
-            })
+            .map(|i| msgs.iter().map(|p_msg| p_msg.enc_shares[i]).sum())
             .collect();
 
         let coordinator_msg = CoordinatorMsg1 {
@@ -131,22 +77,18 @@ impl CoordinatorState for CoordinatorInitialState {
 }
 
 impl CoordinatorState for CoordinatorStep1State {
-    type Message = CoordinatorStep2TransitionMsg;
+    type Message = Vec<ParticipantMsg2>;
     type Next = Self;
     type Output = (CoordinatorMsg2, CoordinatorDkgOutput, RecoveryData);
 
-    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+    fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         ensure!(
-            msg.participant_msgs.len() == self.host_pubkeys.len(),
+            msgs.len() == self.host_pubkeys.len(),
             "Coordinator step 2 received invalid number of participant messages"
         );
 
         let coordinator_msg = CoordinatorMsg2 {
-            cert: msg
-                .participant_msgs
-                .into_iter()
-                .map(|p_msg| p_msg.sig)
-                .collect(),
+            cert: msgs.into_iter().map(|p_msg| p_msg.sig).collect(),
         };
 
         verify_certeq_cert(&self.host_pubkeys, &self.transcript, &coordinator_msg.cert)

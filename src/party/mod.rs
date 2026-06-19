@@ -1,3 +1,4 @@
+use crate::msg::CoordinatorMsg1;
 use anyhow::{Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
@@ -11,8 +12,6 @@ pub trait ParticipantState: Sized {
     type Output;
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)>;
-
-    fn encryption_key(&self) -> ProjectivePoint;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,7 +136,7 @@ pub struct ParticipantStep2State {
 }
 
 impl ParticipantParamsState {
-    fn validate_session_params(&self) -> anyhow::Result<()> {
+    fn validate_session_params(&self) -> Result<()> {
         ensure!(
             self.t >= 1
                 && self.t <= self.host_pubkeys.len()
@@ -164,9 +163,43 @@ impl ParticipantParamsState {
         }
 
         ensure!(
-            self.host_pubkeys[self.idx] == self.encryption_key(),
+            self.host_pubkeys[self.idx] == (ProjectivePoint::GENERATOR * self.s),
             "ParticipantParamsState: host secret key does not match public key at participant index"
         );
+
+        Ok(())
+    }
+}
+
+impl ParticipantStep1State {
+    fn validate_coordinator_msg1(&self, coordinator_msg: &CoordinatorMsg1) -> Result<()> {
+        ensure!(self.t >= 1, "DKG threshold must be at least 1");
+        ensure!(
+            coordinator_msg.coms_to_secrets.len() == self.host_pubkeys.len(),
+            "Coordinator message 1 has invalid number of secret commitments"
+        );
+        ensure!(
+            coordinator_msg.sum_coms_to_nonconst_terms.len() == self.t - 1,
+            "Coordinator message 1 has invalid number of non-constant commitments"
+        );
+        ensure!(
+            coordinator_msg.pops.len() == self.host_pubkeys.len(),
+            "Coordinator message 1 has invalid number of proofs of possession"
+        );
+        ensure!(
+            coordinator_msg.pubnonces.len() == self.host_pubkeys.len(),
+            "Coordinator message 1 has invalid number of public nonces"
+        );
+        ensure!(
+            coordinator_msg.enc_secshares.len() == self.host_pubkeys.len(),
+            "Coordinator message 1 has invalid number of encrypted secret shares"
+        );
+        for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
+            ensure!(
+                !bool::from(pubnonce.is_identity()),
+                "Coordinator message 1 has invalid public nonce at index {i}"
+            );
+        }
 
         Ok(())
     }

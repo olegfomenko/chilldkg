@@ -7,11 +7,8 @@ use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use crate::math::Polynomial;
-use crate::msg::RecoveryData;
-use crate::msg::{
-    CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, ParticipantStep1TransitionMsg,
-    ParticipantStep2TransitionMsg, SessionParamsMsg,
-};
+use crate::msg::{CoordinatorMsg1, RecoveryData};
+use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
 use crate::party::{
     DKGOutput, ParticipantInitialState, ParticipantParamsState, ParticipantState,
     ParticipantStep1State, ParticipantStep2State,
@@ -42,75 +39,34 @@ fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 
     tagged_hash(TAG_ENCPEDPOP_SEED, preimage)
 }
 
-fn validate_coordinator_msg1(
-    msg: &ParticipantStep2TransitionMsg,
-    t: usize,
-    n: usize,
-) -> Result<()> {
-    let coordinator_msg = &msg.coordinator_msg;
-
-    ensure!(t >= 1, "DKG threshold must be at least 1");
-    ensure!(
-        coordinator_msg.coms_to_secrets.len() == n,
-        "Coordinator message 1 has invalid number of secret commitments"
-    );
-    ensure!(
-        coordinator_msg.sum_coms_to_nonconst_terms.len() == t - 1,
-        "Coordinator message 1 has invalid number of non-constant commitments"
-    );
-    ensure!(
-        coordinator_msg.pops.len() == n,
-        "Coordinator message 1 has invalid number of proofs of possession"
-    );
-    ensure!(
-        coordinator_msg.pubnonces.len() == n,
-        "Coordinator message 1 has invalid number of public nonces"
-    );
-    ensure!(
-        coordinator_msg.enc_secshares.len() == n,
-        "Coordinator message 1 has invalid number of encrypted secret shares"
-    );
-    for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
-        ensure!(
-            !bool::from(pubnonce.is_identity()),
-            "Coordinator message 1 has invalid public nonce at index {i}"
-        );
-    }
-
-    Ok(())
-}
-
 impl ParticipantState for ParticipantInitialState {
-    type Message = SessionParamsMsg;
+    type Message = (Vec<ProjectivePoint>, usize);
     type Next = ParticipantParamsState;
-    type Output = ();
+    type Output = ProjectivePoint;
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+        let (host_pubkeys, t) = msg;
         let next_stage = ParticipantParamsState {
             idx: self.idx,
             s: self.s,
-            host_pubkeys: msg.host_pubkeys,
-            t: msg.t,
+            host_pubkeys,
+            t,
         };
 
         next_stage.validate_session_params()?;
 
-        Ok((Some(next_stage), ()))
-    }
-
-    fn encryption_key(&self) -> ProjectivePoint {
-        ProjectivePoint::GENERATOR * self.s
+        Ok((Some(next_stage), ProjectivePoint::GENERATOR * self.s))
     }
 }
 
 impl ParticipantState for ParticipantParamsState {
-    type Message = ParticipantStep1TransitionMsg;
+    type Message = [u8; 32];
     type Next = ParticipantStep1State;
     type Output = ParticipantMsg1;
 
-    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+    fn next(self, random: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         let enc_context = serialize_enc_context(self.t, &self.host_pubkeys);
-        let simpl_seed = derive_simpl_seed(&self.s, &msg.random, &enc_context);
+        let simpl_seed = derive_simpl_seed(&self.s, &random, &enc_context);
 
         let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
 
@@ -167,43 +123,39 @@ impl ParticipantState for ParticipantParamsState {
 
         Ok((Some(next_stage), pmsg1))
     }
-
-    fn encryption_key(&self) -> ProjectivePoint {
-        self.host_pubkeys[self.idx]
-    }
 }
 
 impl ParticipantState for ParticipantStep1State {
-    type Message = ParticipantStep2TransitionMsg;
+    type Message = (CoordinatorMsg1, [u8; 32]);
     type Next = ParticipantStep2State;
     type Output = ParticipantMsg2;
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        let n = self.host_pubkeys.len();
-        validate_coordinator_msg1(&msg, self.t, n)?;
+        let (coordinator_msg, aux) = msg;
+        self.validate_coordinator_msg1(&coordinator_msg)?;
 
         ensure!(
-            msg.coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
+            coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
             "Coordinator sent unexpected commitment to secret for local participant"
         );
         ensure!(
-            msg.coordinator_msg.pubnonces[self.idx] == self.pubnonce,
+            coordinator_msg.pubnonces[self.idx] == self.pubnonce,
             "Coordinator sent unexpected public nonce for local participant"
         );
 
-        for i in 0..n {
+        for i in 0..self.host_pubkeys.len() {
             if i == self.idx {
                 continue;
             }
 
             ensure!(
-                !bool::from(msg.coordinator_msg.coms_to_secrets[i].is_identity()),
+                !bool::from(coordinator_msg.coms_to_secrets[i].is_identity()),
                 "Participant {i} sent invalid commitment"
             );
 
             chilldkg_pop_verify(
-                &msg.coordinator_msg.pops[i],
-                &msg.coordinator_msg.coms_to_secrets[i],
+                &coordinator_msg.pops[i],
+                &coordinator_msg.coms_to_secrets[i],
                 i as u32,
             )
             .with_context(|| format!("Participant {i} sent invalid proof of possession"))?;
@@ -212,15 +164,15 @@ impl ParticipantState for ParticipantStep1State {
         let enc_context = serialize_enc_context(self.t, &self.host_pubkeys);
         let mut secshare = decrypt(
             &self.s,
-            &msg.coordinator_msg.pubnonces,
+            &coordinator_msg.pubnonces,
             &enc_context,
             self.idx,
-            &msg.coordinator_msg.enc_secshares[self.idx],
+            &coordinator_msg.enc_secshares[self.idx],
         )?;
 
         let mut sum_commitment = Vec::with_capacity(self.t);
-        sum_commitment.push(msg.coordinator_msg.coms_to_secrets.iter().sum());
-        sum_commitment.extend_from_slice(&msg.coordinator_msg.sum_coms_to_nonconst_terms);
+        sum_commitment.push(coordinator_msg.coms_to_secrets.iter().sum());
+        sum_commitment.extend_from_slice(&coordinator_msg.sum_coms_to_nonconst_terms);
 
         let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0])?;
         secshare += tweak;
@@ -235,7 +187,7 @@ impl ParticipantState for ParticipantStep1State {
         }
 
         let threshold_pubkey = sum_commitment_tweaked[0];
-        let pubshares = (0..n)
+        let pubshares = (0..self.host_pubkeys.len())
             .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
@@ -243,11 +195,11 @@ impl ParticipantState for ParticipantStep1State {
             self.t,
             &sum_commitment,
             &self.host_pubkeys,
-            &msg.coordinator_msg.pubnonces,
-            &msg.coordinator_msg.enc_secshares,
+            &coordinator_msg.pubnonces,
+            &coordinator_msg.enc_secshares,
         );
 
-        let sig = get_certeq(self.s, self.idx, &transcript, &msg.aux_rand)?;
+        let sig = get_certeq(self.s, self.idx, &transcript, &aux)?;
 
         let dkg_output = DKGOutput {
             idx: self.idx,
@@ -263,10 +215,6 @@ impl ParticipantState for ParticipantStep1State {
         };
 
         Ok((Some(next_stage), ParticipantMsg2 { sig }))
-    }
-
-    fn encryption_key(&self) -> ProjectivePoint {
-        self.host_pubkeys[self.idx]
     }
 }
 
@@ -293,9 +241,5 @@ impl ParticipantState for ParticipantStep2State {
         };
 
         Ok((None, (self.dkg_output, recovery_data)))
-    }
-
-    fn encryption_key(&self) -> ProjectivePoint {
-        self.host_pubkeys[self.dkg_output.idx]
     }
 }

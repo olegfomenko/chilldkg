@@ -1,3 +1,5 @@
+#![allow(non_snake_case)] // Uppercase identifiers denote curve points.
+
 use crate::crypto::tags::TAG_TAP_TWEAK;
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use anyhow::{Result, ensure};

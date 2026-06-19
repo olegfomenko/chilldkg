@@ -1,12 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::msg::RecoveryData;
+use crate::msg::{ParticipantMsg1, RecoveryData};
 use anyhow::{Result, ensure};
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
 pub mod transitions;
-
 pub trait CoordinatorState: Sized {
     type Message;
     type Next: CoordinatorState;
@@ -53,6 +52,37 @@ impl CoordinatorInitialState {
                 ensure!(
                     *P_i != self.host_pubkeys[j],
                     "CoordinatorInitialState: duplicate host public keys at indices {i} and {j}"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_participant_msg1(&self, msgs: &Vec<ParticipantMsg1>) -> Result<()> {
+        ensure!(
+            msgs.len() == self.host_pubkeys.len(),
+            "Coordinator step 1 received invalid number of participant messages"
+        );
+
+        for (i, p_msg) in msgs.iter().enumerate() {
+            ensure!(
+                p_msg.commitment.len() == self.t,
+                "Participant {i} sent invalid number of VSS commitments"
+            );
+            ensure!(
+                p_msg.enc_shares.len() == self.host_pubkeys.len(),
+                "Participant {i} sent invalid number of encrypted shares"
+            );
+            ensure!(
+                !bool::from(p_msg.pubnonce.is_identity()),
+                "Participant {i} sent invalid public nonce"
+            );
+
+            for (k, C_k) in p_msg.commitment.iter().enumerate() {
+                ensure!(
+                    !bool::from(C_k.is_identity()),
+                    "Participant {i} sent invalid VSS commitment at coefficient {k}"
                 );
             }
         }
