@@ -171,7 +171,7 @@ impl ParticipantState for ParticipantStep1State {
                 .is_ok(),
                 ChillDkgError::FaultyParticipantOrCoordinatorError {
                     participant: i,
-                    message: "Participant sent invalid proof-of-possession".to_owned(),
+                    message: "Participant sent invalid proof-of-knowledge".to_owned(),
                 },
             );
         }
