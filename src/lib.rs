@@ -23,15 +23,11 @@ mod tests {
 
         let mut rng = OsRng;
 
-        // ----- INIT PHASE -----
+        // --------------- INIT PHASE ---------------
 
-        let parties = vec![
-            ParticipantInitialState::new(0, &mut rng),
-            ParticipantInitialState::new(1, &mut rng),
-            ParticipantInitialState::new(2, &mut rng),
-            ParticipantInitialState::new(3, &mut rng),
-            ParticipantInitialState::new(4, &mut rng),
-        ];
+        let parties: Vec<_> = (0..N)
+            .map(|idx| ParticipantInitialState::new(idx, &mut rng))
+            .collect();
 
         let host_keys: Vec<ProjectivePoint> = parties.iter().map(|p| p.get_host_key()).collect();
 
@@ -42,9 +38,9 @@ mod tests {
             .map(|p| p.next((host_keys.clone(), T)).unwrap().0.unwrap())
             .collect();
 
-        // ----- DKG PHASE -----
+        // --------------- DKG PHASE ---------------
 
-        // STEP 1
+        // ---- STEP 1 ----
 
         let mut msg1: Vec<ParticipantMsg1> = Vec::with_capacity(N);
 
@@ -60,7 +56,7 @@ mod tests {
         let (next_coordinator, msg1_resp) = coordinator.next(msg1).unwrap();
         let coordinator = next_coordinator.unwrap();
 
-        // STEP 2
+        // ---- STEP 2 ----
 
         let mut msg2: Vec<ParticipantMsg2> = Vec::with_capacity(N);
 
@@ -82,7 +78,7 @@ mod tests {
         );
         println!("\n\n");
 
-        // FINISH (CertEq)
+        // ---- CertEq ----
 
         for p in parties {
             let (_, (p_output, _)) = p.next(msg2_resp.clone()).unwrap();
@@ -91,6 +87,8 @@ mod tests {
                 "Invalid group key for party {}",
                 p_output.idx
             );
+
+            assert_eq!(p_output.pubshares, output.pubshares);
 
             println!("Participant {} DKG output:", p_output.idx);
             println!(
