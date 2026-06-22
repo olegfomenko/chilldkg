@@ -1,11 +1,15 @@
 #![allow(dead_code, non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::common::{
+    ExpectedError, Params, assert_expected_error, get_idx, parse_coordinator_msg1, parse_hex_array,
+    parse_host_pubkeys, parse_participant_msg1, parse_participant_msg2, parse_scalar_hex,
+};
 use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
-use serde::Deserialize;
 use chilldkg::msg::ParticipantMsg2;
-use chilldkg::party::ParticipantState;
-use crate::common::{assert_expected_error, parse_coordinator_msg1, parse_hex_array, parse_participant_msg1, parse_participant_msg2, run_participant_step1, ExpectedError, Params};
+use chilldkg::party::{ParticipantInitialState, ParticipantState};
+use k256::{ProjectivePoint, Scalar};
+use serde::Deserialize;
 
 pub mod common;
 
@@ -74,8 +78,19 @@ fn load_vectors() -> Result<VectorFile> {
 }
 
 fn run_participant_step2(vectors: &VectorFile, cmsg1_hex: &str) -> Result<ParticipantMsg2> {
-    let (state, pmsg1) =
-        run_participant_step1(&vectors.hostseckey, &vectors.params, &vectors.random)?;
+    let s = parse_scalar_hex(&vectors.hostseckey)
+        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
+    if s == Scalar::ZERO {
+        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
+    }
+
+    let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
+    let idx = get_idx(&host_pubkeys, &(ProjectivePoint::GENERATOR * s))?;
+    let initial = ParticipantInitialState { idx, s };
+    let (next, ()) = initial.next((host_pubkeys, vectors.params.t))?;
+    let (next, pmsg1) = next
+        .context("missing participant params state")?
+        .next(parse_hex_array(&vectors.random).map_err(|_| ChillDkgError::RandomnessError)?)?;
     assert_eq!(
         pmsg1,
         parse_participant_msg1(
@@ -91,7 +106,9 @@ fn run_participant_step2(vectors: &VectorFile, cmsg1_hex: &str) -> Result<Partic
         vectors.params.hostpubkeys.len(),
     )?;
     let aux_rand = parse_hex_array(&vectors.aux_rand)?;
-    let (_, pmsg2) = state.next((cmsg1, aux_rand))?;
+    let (_, pmsg2) = next
+        .context("missing participant step1 state")?
+        .next((cmsg1, aux_rand))?;
 
     Ok(pmsg2)
 }

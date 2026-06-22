@@ -1,9 +1,15 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::common::{
+    ExpectedError, Params, assert_expected_error, get_idx, parse_hex_array, parse_host_pubkeys,
+    parse_participant_msg1, parse_scalar_hex,
+};
 use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
+use chilldkg::msg::ParticipantMsg1;
+use chilldkg::party::{ParticipantInitialState, ParticipantState, ParticipantStep1State};
+use k256::{ProjectivePoint, Scalar};
 use serde::Deserialize;
-use crate::common::{assert_expected_error, parse_participant_msg1, run_participant_step1, ExpectedError, Params};
 
 pub mod common;
 
@@ -74,4 +80,27 @@ fn load_vectors() -> Result<VectorFile> {
     );
 
     Ok(vectors)
+}
+
+fn run_participant_step1(
+    hostseckey_hex: &str,
+    params: &Params,
+    random_hex: &str,
+) -> Result<(ParticipantStep1State, ParticipantMsg1)> {
+    let s = parse_scalar_hex(hostseckey_hex)
+        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
+    if s == Scalar::ZERO {
+        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
+    }
+
+    let host_pubkeys = parse_host_pubkeys(&params)?;
+    let host_pubkey = ProjectivePoint::GENERATOR * s;
+    let idx = get_idx(&host_pubkeys, &host_pubkey)?;
+    let initial = ParticipantInitialState { idx, s };
+    let (next, ()) = initial.next((host_pubkeys, params.t))?;
+    let (next, msg) = next
+        .context("missing participant params state")?
+        .next(parse_hex_array(random_hex).map_err(|_| ChillDkgError::RandomnessError)?)?;
+
+    Ok((next.context("missing participant step1 state")?, msg))
 }

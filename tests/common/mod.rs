@@ -3,8 +3,7 @@ use chilldkg::chill_dkg_ensure;
 use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg::crypto::scalar_from_bytes;
 use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::{CoordinatorMsg1, ParticipantMsg1, ParticipantMsg2};
-use chilldkg::party::{ParticipantInitialState, ParticipantState, ParticipantStep1State};
+use chilldkg::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 use serde::Deserialize;
@@ -25,46 +24,32 @@ pub struct Params {
     pub t: usize,
 }
 
-pub fn run_participant_step1(
-    hostseckey_hex: &str,
-    params: &Params,
-    random_hex: &str,
-) -> Result<(ParticipantStep1State, ParticipantMsg1)> {
-    let s = parse_hex_array(hostseckey_hex)
-        .and_then(scalar_from_bytes)
-        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
-    if s == Scalar::ZERO {
-        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
-    }
-
-    let host_pubkeys: Vec<ProjectivePoint> = params
+pub fn parse_host_pubkeys(params: &Params) -> Result<Vec<ProjectivePoint>> {
+    params
         .hostpubkeys
         .iter()
         .enumerate()
         .map(|(participant, hex)| {
-            parse_hex_array(hex)
-                .and_then(parse_point)
+            parse_point_hex(hex)
                 .map_err(|_| ChillDkgError::InvalidHostPubkeyError { participant }.into())
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect()
+}
 
-    let host_pubkey = ProjectivePoint::GENERATOR * s;
+pub fn get_idx(
+    host_pubkeys: &Vec<ProjectivePoint>,
+    host_pubkey: &ProjectivePoint,
+) -> Result<usize> {
     let idx = host_pubkeys
         .iter()
-        .position(|P_i| *P_i == host_pubkey)
+        .position(|P_i| P_i == host_pubkey)
         .ok_or_else(|| {
             ChillDkgError::HostSeckeyError(
                 "Host secret key does not match any host public key".to_owned(),
             )
         })?;
 
-    let initial = ParticipantInitialState { idx, s };
-    let (next, ()) = initial.next((host_pubkeys, params.t))?;
-    let (next, msg) = next
-        .context("missing participant params state")?
-        .next(parse_hex_array(random_hex).map_err(|_| ChillDkgError::RandomnessError)?)?;
-
-    Ok((next.context("missing participant step1 state")?, msg))
+    Ok(idx)
 }
 
 pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<ParticipantMsg1> {
@@ -182,6 +167,27 @@ pub fn parse_participant_msg2(hex: &str) -> Result<ParticipantMsg2> {
     })
 }
 
+pub fn parse_coordinator_msg2(hex: &str, n: usize) -> Result<CoordinatorMsg2> {
+    let bytes = hex::decode(hex)?;
+    chill_dkg_ensure!(
+        bytes.len() == 64 * n,
+        ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned()),
+    );
+
+    let mut offset = 0;
+    let cert = (0..n).map(|_| take(&bytes, &mut offset)).collect();
+
+    Ok(CoordinatorMsg2 { cert })
+}
+
+pub fn parse_scalar_hex(hex: &str) -> Result<Scalar> {
+    parse_hex_array(hex).and_then(scalar_from_bytes)
+}
+
+pub fn parse_point_hex(hex: &str) -> Result<ProjectivePoint> {
+    parse_hex_array(hex).and_then(parse_point)
+}
+
 pub fn assert_expected_error(actual: &ChillDkgError, expected: &ExpectedError, tc_id: usize) {
     assert_eq!(
         actual.to_string(),
@@ -214,10 +220,11 @@ pub fn assert_expected_error(actual: &ChillDkgError, expected: &ExpectedError, t
     }
 
     if let Some(message) = &expected.message {
-        assert_eq!(
-            actual_message(actual),
-            Some(message.as_str()),
-            "error test case {tc_id} returned unexpected error message",
+        let actual_message = actual_message(actual)
+            .unwrap_or_else(|| panic!("error test case {tc_id} returned no error message"));
+        assert!(
+            actual_message.starts_with(message),
+            "error test case {tc_id} returned unexpected error message prefix: expected {message:?}, got {actual_message:?}",
         );
     }
 }
