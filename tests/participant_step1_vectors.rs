@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, ensure};
 use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg::crypto::scalar_from_bytes;
+use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::ParticipantMsg1;
 use chilldkg::party::{ParticipantInitialState, ParticipantState};
 use k256::elliptic_curve::Group;
@@ -31,6 +32,13 @@ struct ErrorCase {
     hostseckey: String,
     params: Params,
     random: String,
+    expected_error: ExpectedError,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExpectedError {
+    #[serde(rename = "type")]
+    error_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,7 +53,8 @@ fn test_participant_step1_vectors() -> Result<()> {
 
     for case in vectors.valid_test_cases {
         let actual = run_participant_step1(&case.hostseckey, &case.params, &case.random)
-            .with_context(|| format!("valid test case {} failed", case.tc_id))?;
+            .context(format!("valid test case {} failed", case.tc_id))?;
+
         let expected = parse_participant_msg1(
             &case.expected_pmsg1,
             case.params.t,
@@ -56,9 +65,18 @@ fn test_participant_step1_vectors() -> Result<()> {
     }
 
     for case in vectors.error_test_cases {
-        assert!(
-            run_participant_step1(&case.hostseckey, &case.params, &case.random).is_err(),
-            "error test case {} unexpectedly succeeded",
+        let err = run_participant_step1(&case.hostseckey, &case.params, &case.random)
+            .expect_err("error test case unexpectedly succeeded");
+
+        let actual_error: &ChillDkgError = (&err).try_into().context(format!(
+            "error test case {} returned untyped error",
+            case.tc_id
+        ))?;
+
+        assert_eq!(
+            actual_error.to_string(),
+            case.expected_error.error_type,
+            "error test case {} returned unexpected error type",
             case.tc_id
         );
     }
@@ -83,13 +101,22 @@ fn run_participant_step1(
     params: &Params,
     random_hex: &str,
 ) -> Result<ParticipantMsg1> {
-    let s = scalar_from_bytes(parse_hex_array(hostseckey_hex)?)?;
-    ensure!(s != Scalar::ZERO, "host secret key is zero");
+    let s = parse_hex_array(hostseckey_hex)
+        .and_then(scalar_from_bytes)
+        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
+    if s == Scalar::ZERO {
+        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
+    }
 
     let host_pubkeys: Vec<ProjectivePoint> = params
         .hostpubkeys
         .iter()
-        .map(|hex| parse_point(parse_hex_array(hex)?))
+        .enumerate()
+        .map(|(participant, hex)| {
+            parse_hex_array(hex)
+                .and_then(parse_point)
+                .map_err(|_| ChillDkgError::InvalidHostPubkeyError { participant }.into())
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let host_pubkey = ProjectivePoint::GENERATOR * s;
@@ -97,13 +124,17 @@ fn run_participant_step1(
     let idx = host_pubkeys
         .iter()
         .position(|P_i| *P_i == host_pubkey)
-        .context("host secret key does not match any host public key")?;
+        .ok_or_else(|| {
+            ChillDkgError::HostSeckeyError(
+                "Host secret key does not match any host public key".to_owned(),
+            )
+        })?;
 
     let initial = ParticipantInitialState { idx, s };
     let (next, ()) = initial.next((host_pubkeys, params.t))?;
     let (_, msg) = next
         .context("missing participant params state")?
-        .next(parse_hex_array(random_hex)?)?;
+        .next(parse_hex_array(random_hex).map_err(|_| ChillDkgError::RandomnessError)?)?;
 
     Ok(msg)
 }

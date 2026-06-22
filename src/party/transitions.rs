@@ -1,11 +1,13 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::crypto::certeq::{get_certeq, get_certeq_transcript, verify_certeq};
 use crate::crypto::ec::{compress_default, eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
+use crate::errors::ChillDkgError;
 use crate::math::Polynomial;
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
@@ -13,7 +15,7 @@ use crate::party::{
     DKGOutput, ParticipantInitialState, ParticipantParamsState, ParticipantState,
     ParticipantStep1State, ParticipantStep2State,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -134,13 +136,17 @@ impl ParticipantState for ParticipantStep1State {
         let (coordinator_msg, aux) = msg;
         self.validate_coordinator_msg1(&coordinator_msg)?;
 
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
-            "Coordinator sent unexpected commitment to secret for local participant"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator sent unexpected first group element for local index".to_owned()
+            ),
         );
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.pubnonces[self.idx] == self.pubnonce,
-            "Coordinator sent unexpected public nonce for local participant"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator replied with wrong pubnonce".to_owned()
+            ),
         );
 
         for i in 0..self.host_pubkeys.len() {
@@ -148,17 +154,26 @@ impl ParticipantState for ParticipantStep1State {
                 continue;
             }
 
-            ensure!(
+            chill_dkg_ensure!(
                 !bool::from(coordinator_msg.coms_to_secrets[i].is_identity()),
-                "Participant {i} sent invalid commitment"
+                ChillDkgError::FaultyParticipantOrCoordinatorError {
+                    participant: i,
+                    message: "Participant sent invalid commitment".to_owned(),
+                },
             );
 
-            chilldkg_pop_verify(
-                &coordinator_msg.pops[i],
-                &coordinator_msg.coms_to_secrets[i],
-                i as u32,
-            )
-            .with_context(|| format!("Participant {i} sent invalid proof of possession"))?;
+            chill_dkg_ensure!(
+                chilldkg_pop_verify(
+                    &coordinator_msg.pops[i],
+                    &coordinator_msg.coms_to_secrets[i],
+                    i as u32,
+                )
+                .is_ok(),
+                ChillDkgError::FaultyParticipantOrCoordinatorError {
+                    participant: i,
+                    message: "Participant sent invalid proof-of-possession".to_owned(),
+                },
+            );
         }
 
         let enc_context = serialize_enc_context(self.t, &self.host_pubkeys);
@@ -182,9 +197,13 @@ impl ParticipantState for ParticipantStep1State {
 
         let pubshare_tweaked = eval_pub_share(&sum_commitment_tweaked, self.idx);
 
-        if ProjectivePoint::GENERATOR * secshare != pubshare_tweaked {
-            bail!("Received invalid secret share");
-        }
+        chill_dkg_ensure!(
+            ProjectivePoint::GENERATOR * secshare == pubshare_tweaked,
+            ChillDkgError::UnknownFaultyParticipantOrCoordinatorError(
+                "Received invalid secshare, consider investigation procedure to determine faulty party"
+                    .to_owned(),
+            ),
+        );
 
         let threshold_pubkey = sum_commitment_tweaked[0];
         let pubshares = (0..self.host_pubkeys.len())
@@ -224,15 +243,20 @@ impl ParticipantState for ParticipantStep2State {
     type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        ensure!(
+        chill_dkg_ensure!(
             msg.cert.len() == self.host_pubkeys.len(),
-            "CertEq certificate has invalid number of signatures"
+            ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned(),),
         );
 
-        for (i, (host_pubkey, sig)) in self.host_pubkeys.iter().zip(msg.cert.iter()).enumerate() {
-            verify_certeq(host_pubkey, i, &self.transcript, sig).with_context(|| {
-                format!("CertEq certificate has invalid signature at index {i}")
-            })?;
+        for i in 0..self.host_pubkeys.len() {
+            if let Err(err) =
+                verify_certeq(&self.host_pubkeys[i], i, &self.transcript, &msg.cert[i])
+            {
+                return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
+                    participant: i,
+                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err)
+                }.into());
+            }
         }
 
         let recovery_data = RecoveryData {

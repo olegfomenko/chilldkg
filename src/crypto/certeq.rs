@@ -158,24 +158,6 @@ pub fn verify_certeq(
     Ok(())
 }
 
-pub fn verify_certeq_cert(
-    host_pubkeys: &[ProjectivePoint],
-    transcript: &[u8],
-    cert: &[SchnorrSignature],
-) -> Result<()> {
-    ensure!(
-        cert.len() == host_pubkeys.len(),
-        "CertEq certificate has invalid number of signatures"
-    );
-
-    for (i, (host_pubkey, sig)) in host_pubkeys.iter().zip(cert.iter()).enumerate() {
-        verify_certeq(host_pubkey, i, transcript, sig)
-            .with_context(|| format!("CertEq certificate has invalid signature at index {i}"))?;
-    }
-
-    Ok(())
-}
-
 fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
     //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
     //   || uint32_be(idx)

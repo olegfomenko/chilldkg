@@ -1,5 +1,7 @@
+use crate::chill_dkg_ensure;
+use crate::errors::ChillDkgError;
 use crate::msg::CoordinatorMsg1;
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
@@ -141,34 +143,41 @@ pub struct ParticipantStep2State {
 
 impl ParticipantParamsState {
     fn validate_session_params(&self) -> Result<()> {
-        ensure!(
+        chill_dkg_ensure!(
             self.t >= 1
                 && self.t <= self.host_pubkeys.len()
                 && self.host_pubkeys.len() <= u32::MAX as usize,
-            "ParticipantParamsState: invalid DKG threshold or participant count"
+            ChillDkgError::ThresholdOrCountError,
         );
-        ensure!(
+        chill_dkg_ensure!(
             self.idx < self.host_pubkeys.len(),
-            "ParticipantParamsState: participant index is out of range for host public keys"
+            ChillDkgError::ValueError(
+                "participant index is out of range for host public keys".to_owned()
+            ),
         );
 
         for (i, pubkey) in self.host_pubkeys.iter().enumerate() {
-            ensure!(
+            chill_dkg_ensure!(
                 !bool::from(pubkey.is_identity()),
-                "ParticipantParamsState: invalid host public key at index {i}"
+                ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
             for j in (i + 1)..self.host_pubkeys.len() {
-                ensure!(
+                chill_dkg_ensure!(
                     *pubkey != self.host_pubkeys[j],
-                    "ParticipantParamsState: duplicate host public keys at indices {i} and {j}"
+                    ChillDkgError::DuplicateHostPubkeyError {
+                        participant1: i,
+                        participant2: j,
+                    },
                 );
             }
         }
 
-        ensure!(
+        chill_dkg_ensure!(
             self.host_pubkeys[self.idx] == (ProjectivePoint::GENERATOR * self.s),
-            "ParticipantParamsState: host secret key does not match public key at participant index"
+            ChillDkgError::HostSeckeyError(
+                "Host secret key does not match any host public key".to_owned()
+            ),
         );
 
         Ok(())
@@ -177,31 +186,46 @@ impl ParticipantParamsState {
 
 impl ParticipantStep1State {
     fn validate_coordinator_msg1(&self, coordinator_msg: &CoordinatorMsg1) -> Result<()> {
-        ensure!(self.t >= 1, "DKG threshold must be at least 1");
-        ensure!(
+        chill_dkg_ensure!(
+            self.t >= 1,
+            ChillDkgError::FaultyCoordinatorError("DKG threshold must be at least 1".to_owned()),
+        );
+        chill_dkg_ensure!(
             coordinator_msg.coms_to_secrets.len() == self.host_pubkeys.len(),
-            "Coordinator message 1 has invalid number of secret commitments"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator message 1 has invalid number of secret commitments".to_owned()
+            ),
         );
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.sum_coms_to_nonconst_terms.len() == self.t - 1,
-            "Coordinator message 1 has invalid number of non-constant commitments"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator message 1 has invalid number of non-constant commitments".to_owned()
+            ),
         );
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.pops.len() == self.host_pubkeys.len(),
-            "Coordinator message 1 has invalid number of proofs of possession"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator message 1 has invalid number of proofs of possession".to_owned()
+            ),
         );
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.pubnonces.len() == self.host_pubkeys.len(),
-            "Coordinator message 1 has invalid number of public nonces"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator message 1 has invalid number of public nonces".to_owned()
+            ),
         );
-        ensure!(
+        chill_dkg_ensure!(
             coordinator_msg.enc_secshares.len() == self.host_pubkeys.len(),
-            "Coordinator message 1 has invalid number of encrypted secret shares"
+            ChillDkgError::FaultyCoordinatorError(
+                "Coordinator message 1 has invalid number of encrypted secret shares".to_owned()
+            ),
         );
         for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
-            ensure!(
+            chill_dkg_ensure!(
                 !bool::from(pubnonce.is_identity()),
-                "Coordinator message 1 has invalid public nonce at index {i}"
+                ChillDkgError::FaultyCoordinatorError(format!(
+                    "Coordinator message 1 has invalid public nonce at index {i}"
+                )),
             );
         }
 

@@ -1,14 +1,16 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::coordinator::{
     CoordinatorDkgOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
-use crate::crypto::certeq::{get_certeq_transcript, verify_certeq_cert};
+use crate::crypto::certeq::{get_certeq_transcript, verify_certeq};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
+use crate::errors::ChillDkgError;
 use crate::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::Result;
 use k256::ProjectivePoint;
 
 impl CoordinatorState for CoordinatorInitialState {
@@ -82,23 +84,33 @@ impl CoordinatorState for CoordinatorStep1State {
     type Output = (CoordinatorMsg2, CoordinatorDkgOutput, RecoveryData);
 
     fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        ensure!(
+        chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
-            "Coordinator step 2 received invalid number of participant messages"
+            ChillDkgError::ValueError(
+                "Coordinator step 2 received invalid number of participant messages".to_owned()
+            ),
         );
 
-        let coordinator_msg = CoordinatorMsg2 {
+        let msg = CoordinatorMsg2 {
             cert: msgs.into_iter().map(|p_msg| p_msg.sig).collect(),
         };
 
-        verify_certeq_cert(&self.host_pubkeys, &self.transcript, &coordinator_msg.cert)
-            .context("Coordinator step 2 received invalid CertEq certificate")?;
+        for i in 0..self.host_pubkeys.len() {
+            if let Err(err) =
+                verify_certeq(&self.host_pubkeys[i], i, &self.transcript, &msg.cert[i])
+            {
+                return Err(ChillDkgError::FaultyParticipantError {
+                    participant: i,
+                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err)
+                }.into());
+            }
+        }
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,
-            cert: coordinator_msg.cert.clone(),
+            cert: msg.cert.clone(),
         };
 
-        Ok((None, (coordinator_msg, self.dkg_output, recovery_data)))
+        Ok((None, (msg, self.dkg_output, recovery_data)))
     }
 }
