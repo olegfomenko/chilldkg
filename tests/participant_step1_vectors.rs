@@ -1,14 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use anyhow::{Context, Result, ensure};
-use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
-use chilldkg::crypto::scalar_from_bytes;
 use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::ParticipantMsg1;
-use chilldkg::party::{ParticipantInitialState, ParticipantState};
-use k256::elliptic_curve::Group;
-use k256::{ProjectivePoint, Scalar};
 use serde::Deserialize;
+use crate::common::{assert_expected_error, parse_participant_msg1, run_participant_step1, ExpectedError, Params};
+
+pub mod common;
 
 #[derive(Debug, Deserialize)]
 struct VectorFile {
@@ -35,24 +32,12 @@ struct ErrorCase {
     expected_error: ExpectedError,
 }
 
-#[derive(Debug, Deserialize)]
-struct ExpectedError {
-    #[serde(rename = "type")]
-    error_type: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Params {
-    hostpubkeys: Vec<String>,
-    t: usize,
-}
-
 #[test]
 fn test_participant_step1_vectors() -> Result<()> {
     let vectors = load_vectors()?;
 
     for case in vectors.valid_test_cases {
-        let actual = run_participant_step1(&case.hostseckey, &case.params, &case.random)
+        let (_, actual) = run_participant_step1(&case.hostseckey, &case.params, &case.random)
             .context(format!("valid test case {} failed", case.tc_id))?;
 
         let expected = parse_participant_msg1(
@@ -73,12 +58,7 @@ fn test_participant_step1_vectors() -> Result<()> {
             case.tc_id
         ))?;
 
-        assert_eq!(
-            actual_error.to_string(),
-            case.expected_error.error_type,
-            "error test case {} returned unexpected error type",
-            case.tc_id
-        );
+        assert_expected_error(actual_error, &case.expected_error, case.tc_id);
     }
 
     Ok(())
@@ -94,97 +74,4 @@ fn load_vectors() -> Result<VectorFile> {
     );
 
     Ok(vectors)
-}
-
-fn run_participant_step1(
-    hostseckey_hex: &str,
-    params: &Params,
-    random_hex: &str,
-) -> Result<ParticipantMsg1> {
-    let s = parse_hex_array(hostseckey_hex)
-        .and_then(scalar_from_bytes)
-        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
-    if s == Scalar::ZERO {
-        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
-    }
-
-    let host_pubkeys: Vec<ProjectivePoint> = params
-        .hostpubkeys
-        .iter()
-        .enumerate()
-        .map(|(participant, hex)| {
-            parse_hex_array(hex)
-                .and_then(parse_point)
-                .map_err(|_| ChillDkgError::InvalidHostPubkeyError { participant }.into())
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let host_pubkey = ProjectivePoint::GENERATOR * s;
-
-    let idx = host_pubkeys
-        .iter()
-        .position(|P_i| *P_i == host_pubkey)
-        .ok_or_else(|| {
-            ChillDkgError::HostSeckeyError(
-                "Host secret key does not match any host public key".to_owned(),
-            )
-        })?;
-
-    let initial = ParticipantInitialState { idx, s };
-    let (next, ()) = initial.next((host_pubkeys, params.t))?;
-    let (_, msg) = next
-        .context("missing participant params state")?
-        .next(parse_hex_array(random_hex).map_err(|_| ChillDkgError::RandomnessError)?)?;
-
-    Ok(msg)
-}
-
-fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<ParticipantMsg1> {
-    let bytes = hex::decode(hex)?;
-    ensure!(
-        bytes.len() == 33 * t + 64 + 33 + 32 * n,
-        "invalid pmsg1 length"
-    );
-
-    let mut offset = 0;
-
-    let commitment: Vec<ProjectivePoint> = (0..t)
-        .map(|_| parse_point(take(&bytes, &mut offset)))
-        .collect::<Result<Vec<_>>>()?;
-
-    let pop = take(&bytes, &mut offset);
-
-    let pubnonce = parse_point(take(&bytes, &mut offset))?;
-
-    let enc_shares: Vec<Scalar> = (0..n)
-        .map(|_| scalar_from_bytes(take(&bytes, &mut offset)))
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(ParticipantMsg1 {
-        commitment,
-        pop,
-        pubnonce,
-        enc_shares,
-    })
-}
-
-fn parse_point(bytes: CompressedPubKey) -> Result<ProjectivePoint> {
-    let point = decompress_default(&bytes).context("invalid compressed point")?;
-    ensure!(!bool::from(point.is_identity()), "point is identity");
-    Ok(point)
-}
-
-fn parse_hex_array<const N: usize>(hex: &str) -> Result<[u8; N]> {
-    let bytes = hex::decode(hex)?;
-    ensure!(bytes.len() == N, "invalid hex length");
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes);
-    Ok(out)
-}
-
-fn take<const N: usize>(bytes: &[u8], offset: &mut usize) -> [u8; N] {
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes[*offset..*offset + N]);
-    *offset += N;
-    out
 }
