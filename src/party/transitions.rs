@@ -42,7 +42,7 @@ fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 
 impl ParticipantState for ParticipantInitialState {
     type Message = (Vec<ProjectivePoint>, usize);
     type Next = ParticipantParamsState;
-    type Output = ProjectivePoint;
+    type Output = ();
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         let (host_pubkeys, t) = msg;
@@ -55,7 +55,7 @@ impl ParticipantState for ParticipantInitialState {
 
         next_stage.validate_session_params()?;
 
-        Ok((Some(next_stage), ProjectivePoint::GENERATOR * self.s))
+        Ok((Some(next_stage), ()))
     }
 }
 

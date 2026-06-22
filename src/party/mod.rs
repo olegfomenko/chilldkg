@@ -33,6 +33,10 @@ impl ParticipantInitialState {
 
         Self { idx, s }
     }
+
+    pub fn get_host_key(&self) -> ProjectivePoint {
+        ProjectivePoint::GENERATOR * self.s
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
