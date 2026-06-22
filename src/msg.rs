@@ -4,7 +4,7 @@ use k256::{ProjectivePoint, Scalar};
 /// Participant -> Coordinator, Step 1.
 ///
 /// pmsg1_i = (C_i, pop_i, R_i, hat_u_{i,1}, ..., hat_u_{i,n})
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParticipantMsg1 {
     /// Participant's VSS commitment.
     ///
@@ -32,7 +32,7 @@ pub struct ParticipantMsg1 {
 ///   R_1, ..., R_n,
 ///   hat_u_1, ..., hat_u_n
 /// )
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoordinatorMsg1 {
     /// Constant commitments to participant secrets.
     ///
@@ -60,7 +60,7 @@ pub struct CoordinatorMsg1 {
 /// Participant -> Coordinator, Step 2.
 ///
 /// pmsg2_i = sigma_eq_i
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParticipantMsg2 {
     /// CertEq signature over the equality-check transcript.
     pub sig: SchnorrSignature,
@@ -69,7 +69,7 @@ pub struct ParticipantMsg2 {
 /// Coordinator -> Participants, Finalize.
 ///
 /// cmsg2 = (sigma_eq_1, ..., sigma_eq_n)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CoordinatorMsg2 {
     /// CertEq certificate, one signature from each participant.
     pub cert: Vec<SchnorrSignature>,
@@ -79,7 +79,7 @@ pub struct CoordinatorMsg2 {
 /// after finalization:
 ///
 /// recovery_data = transcript || cert
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryData {
     pub transcript: Vec<u8>,
     pub cert: Vec<SchnorrSignature>,
