@@ -74,7 +74,8 @@ fn test_participant_finalize_vectors() -> Result<()> {
 
     for case in &vectors.error_test_cases {
         let err = run_participant_finalize(&vectors, &case.cmsg2)
-            .expect_err("error test case unexpectedly succeeded");
+            .err()
+            .context("error test case unexpectedly succeeded")?;
 
         let actual_error: &ChillDkgError = (&err).try_into().context(format!(
             "error test case {} returned untyped error",

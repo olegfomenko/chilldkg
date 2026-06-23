@@ -57,7 +57,8 @@ fn test_participant_step1_vectors() -> Result<()> {
 
     for case in vectors.error_test_cases {
         let err = run_participant_step1(&case.hostseckey, &case.params, &case.random)
-            .expect_err("error test case unexpectedly succeeded");
+            .err()
+            .context("error test case unexpectedly succeeded")?;
 
         let actual_error: &ChillDkgError = (&err).try_into().context(format!(
             "error test case {} returned untyped error",

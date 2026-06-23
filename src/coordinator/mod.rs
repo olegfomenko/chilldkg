@@ -64,7 +64,7 @@ impl CoordinatorInitialState {
         Ok(())
     }
 
-    fn validate_participant_msg1(&self, msgs: &Vec<ParticipantMsg1>) -> Result<()> {
+    fn validate_participant_msg1(&self, msgs: &[ParticipantMsg1]) -> Result<()> {
         chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
             ChillDkgError::ValueError(

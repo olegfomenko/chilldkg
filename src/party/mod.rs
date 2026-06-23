@@ -16,7 +16,7 @@ pub trait ParticipantState: Sized {
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)>;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantInitialState {
     /// Participant index.
     ///
@@ -41,7 +41,7 @@ impl ParticipantInitialState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantParamsState {
     /// Participant index.
     ///
@@ -64,7 +64,7 @@ pub struct ParticipantParamsState {
     pub host_pubkeys: Vec<ProjectivePoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantStep1State {
     /// Participant index.
     ///
@@ -97,7 +97,7 @@ pub struct ParticipantStep1State {
     pub com_to_secret: ProjectivePoint,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DKGOutput {
     /// Participant index.
     ///
@@ -125,7 +125,7 @@ pub struct DKGOutput {
     pub pubshares: Vec<ProjectivePoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantStep2State {
     /// Ordered participant host public keys.
     ///

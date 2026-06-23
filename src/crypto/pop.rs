@@ -118,7 +118,7 @@ pub fn chilldkg_pop_verify(pop: &SchnorrSignature, com: &ProjectivePoint, m: u32
         challenge_preimage,
     )));
 
-    let r = ProjectivePoint::GENERATOR * s - event_y_point(com) * &e;
+    let r = ProjectivePoint::GENERATOR * s - event_y_point(com) * e;
 
     ensure!(
         !bool::from(r.is_identity()),
