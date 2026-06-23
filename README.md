@@ -1,9 +1,9 @@
 # ChillDKG
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/distributed-lab/bp-pp/issues)
-<a href="https://github.com/distributed-lab/bp-pp">
-<img src="https://img.shields.io/github/stars/distributed-lab/bp-pp?style=social"/>
+[![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/olegfomenko/chilldkg/issues)
+<a href="https://github.com/olegfomenko/chilldkg">
+<img src="https://img.shields.io/github/stars/olegfomenko/chilldkg?style=social"/>
 </a>
 
 ⚠️ __Please note - this crypto library has not been audited, so use it at your own risk.__
@@ -17,17 +17,16 @@ The crate is built around `k256` secp256k1 scalars and curve points. It exposes
 typed participant and coordinator state machines, plus the lower-level crypto
 building blocks used by the protocol.
 
-## Status
+⚠️ This repository is a work in progress.
 
-This repository is a work in progress.
+- [x] The main participant and coordinator DKG flows.
+- [x] Tests with reference test vectors (`tests/vectors`).
+- [ ] Recovery using transcript and secret host key.
+- [ ] Malicious behavior investigation.
+- [ ] Messages serialization.
+- [ ] Implementation audit.
 
-- The main participant and coordinator DKG flow is implemented.
-- Reference test vectors are being added under `tests/vectors`.
-- Messages are currently typed Rust structs, not a stable wire format.
-- No custom `serde` layer is provided for `k256` values.
-- The implementation has not been audited and should not be used in production.
-
-## Crate Layout
+## Implementation
 
 - `src/party`: participant state machine.
 - `src/coordinator`: coordinator state machine.
@@ -36,8 +35,6 @@ This repository is a work in progress.
 - `src/math`: scalar polynomial helpers.
 - `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, and CertEq helpers.
 - `tests`: unit tests and reference-vector integration tests.
-
-## Protocol Shape
 
 The API models the protocol as consuming state transitions. Each call to `next`
 takes the input for the current step, returns the next state, and returns the
@@ -54,6 +51,39 @@ High-level flow:
 6. The coordinator verifies all `ParticipantMsg2` values and produces
    `CoordinatorMsg2`, coordinator DKG output, and recovery data.
 7. Participants verify `CoordinatorMsg2` and produce their final DKG outputs.
+
+### Participant States
+
+```mermaid
+stateDiagram-v2
+    [*] --> ParticipantInitialState: new(idx, rng)
+    ParticipantInitialState --> ParticipantParamsState: next((host_pubkeys, t))
+    ParticipantInitialState --> Failed: .next() call failed
+    ParticipantParamsState --> ParticipantStep1State: next(random)
+    ParticipantParamsState --> Failed: .next() call failed
+    ParticipantStep1State --> ParticipantStep2State: next((CoordinatorMsg1, aux_rand))
+    ParticipantStep1State --> Failed: .next() call failed
+    ParticipantStep2State --> Success: next(CoordinatorMsg2)
+    ParticipantStep2State --> Failed: .next() call failed
+    Success --> [*]
+    Failed --> [*]
+```
+
+### Coordinator States
+
+```mermaid
+stateDiagram-v2
+    [*] --> CoordinatorInitialState: new(host_pubkeys, t)
+    CoordinatorInitialState --> CoordinatorStep1State: next([ParticipantMsg2])
+    CoordinatorInitialState --> Failed: .next() call failed
+    CoordinatorStep1State --> Success: next([ParticipantMsg2])
+    CoordinatorStep1State --> Failed: .next() call failed
+    Success --> [*]
+    Failed --> [*]
+```
+
+All transitions return `anyhow::Result`. Validation or protocol failures return
+an error instead of advancing to the next state.
 
 ## Example
 
@@ -133,57 +163,12 @@ fn main() -> anyhow::Result<()> {
 In real use, `random` and `aux_rand` must be fresh 32-byte randomness values.
 The all-zero arrays above are only to keep the example short.
 
-## Messages and Serialization
-
-Protocol messages are currently Rust structs:
-
-- `ParticipantMsg1`
-- `CoordinatorMsg1`
-- `ParticipantMsg2`
-- `CoordinatorMsg2`
-- `RecoveryData`
-
-These structs contain `k256::Scalar` and `k256::ProjectivePoint` values directly.
-The crate does not currently define a stable byte format or JSON format for
-these messages. The integration tests parse reference-vector bytes into these
-typed structs in test code.
-
-## Errors
-
-Most protocol failures are represented by `ChillDkgError` variants whose names
-match the reference implementation where possible, for example:
-
-- `ThresholdOrCountError`
-- `DuplicateHostPubkeyError`
-- `InvalidHostPubkeyError`
-- `FaultyParticipantError`
-- `FaultyCoordinatorError`
-- `FaultyParticipantOrCoordinatorError`
-- `UnknownFaultyParticipantOrCoordinatorError`
-
-Public APIs return `anyhow::Result`, and `ChillDkgError` can be recovered from
-the error chain:
-
-```rust
-use chilldkg::errors::ChillDkgError;
-
-fn classify(err: &anyhow::Error) -> Option<&ChillDkgError> {
-    err.try_into().ok()
-}
-```
-
 ## Tests
 
 Run all tests:
 
 ```bash
 cargo test
-```
-
-Run formatting check:
-
-```bash
-cargo fmt --check
 ```
 
 The current integration vector suites include:
@@ -205,4 +190,3 @@ Rust messages rather than byte-level parsing APIs.
 - Lowercase scalar names such as `s`, `r`, and `tweak` denote scalars or ordinary values.
 - The implementation deliberately avoids custom serializers for `k256` types for now.
 - Keep reference-vector tests focused on behavior that can reach the typed Rust API.
-

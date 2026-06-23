@@ -26,7 +26,7 @@ mod tests {
 
         // --------------- INIT PHASE ---------------
 
-        let parties: Vec<_> = (0..N)
+        let parties: Vec<ParticipantInitialState> = (0..N)
             .map(|idx| ParticipantInitialState::new(idx, &mut rng))
             .collect();
 
