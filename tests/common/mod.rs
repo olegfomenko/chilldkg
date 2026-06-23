@@ -33,10 +33,9 @@ pub fn parse_host_pubkeys(params: &Params) -> Result<Vec<ProjectivePoint>> {
 
 pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<ParticipantMsg1> {
     let bytes = hex::decode(hex)?;
-    ensure!(
-        bytes.len() == 33 * t + 64 + 33 + 32 * n,
-        "invalid pmsg1 length"
-    );
+    let fixed_len = 33 * t + 64 + 33;
+    ensure!(bytes.len() >= fixed_len, "invalid pmsg1 length");
+    ensure!((bytes.len() - fixed_len) % 32 == 0, "invalid pmsg1 length");
 
     let mut offset = 0;
     let commitment = (0..t)
@@ -44,7 +43,9 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
         .collect::<Result<Vec<_>>>()?;
     let pop = take(&bytes, &mut offset);
     let pubnonce = parse_point(take(&bytes, &mut offset))?;
-    let enc_shares = (0..n)
+    let enc_share_count = (bytes.len() - offset) / 32;
+    ensure!(enc_share_count <= n, "invalid pmsg1 length");
+    let enc_shares = (0..enc_share_count)
         .map(|_| scalar_from_bytes(take(&bytes, &mut offset)))
         .collect::<Result<Vec<_>>>()?;
 
