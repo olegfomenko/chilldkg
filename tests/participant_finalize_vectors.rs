@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::common::{
     ExpectedError, Params, assert_expected_error, parse_coordinator_msg1, parse_hex_array,
     parse_host_pubkeys, parse_participant_msg1, parse_participant_msg2, parse_point_hex,
-    parse_scalar_hex,
+    parse_scalar_hex, serialize_recovery_data,
 };
 
 pub mod common;
@@ -154,14 +154,6 @@ fn parse_coordinator_msg2(hex: &str, _n: usize) -> Result<CoordinatorMsg2> {
         .collect();
 
     Ok(CoordinatorMsg2 { cert })
-}
-
-fn serialize_recovery_data(recovery_data: &RecoveryData) -> Vec<u8> {
-    let mut bytes = recovery_data.transcript.clone();
-    for sig in &recovery_data.cert {
-        bytes.extend_from_slice(sig);
-    }
-    bytes
 }
 
 fn assert_expected_output(

@@ -2,7 +2,9 @@ use anyhow::{Context, Result, ensure};
 use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg::crypto::scalar_from_bytes;
 use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::{CoordinatorMsg1, ParticipantMsg1, ParticipantMsg2};
+use chilldkg::msg::{
+    CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
+};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 use serde::Deserialize;
@@ -119,6 +121,16 @@ pub fn parse_participant_msg2(hex: &str) -> Result<ParticipantMsg2> {
     Ok(ParticipantMsg2 {
         sig: parse_hex_array(hex)?,
     })
+}
+
+pub fn serialize_coordinator_msg2(coordinator_msg: &CoordinatorMsg2) -> Vec<u8> {
+    coordinator_msg.cert.iter().flatten().copied().collect()
+}
+
+pub fn serialize_recovery_data(recovery_data: &RecoveryData) -> Vec<u8> {
+    let mut bytes = recovery_data.transcript.clone();
+    bytes.extend(recovery_data.cert.iter().flatten().copied());
+    bytes
 }
 
 pub fn parse_scalar_hex(hex: &str) -> Result<Scalar> {
