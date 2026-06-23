@@ -103,9 +103,14 @@ fn main() -> anyhow::Result<()> {
 
     let mut rng = OsRng;
 
+    
+    // 1. Prepare params 
+    
     let participants: Vec<_> = (0..N)
         .map(|idx| ParticipantInitialState::new(idx, &mut rng))
         .collect();
+    
+    // TODO: Securely save `participants[i].s`
 
     let host_pubkeys: Vec<ProjectivePoint> =
         participants.iter().map(|p| p.get_host_key()).collect();
@@ -116,12 +121,14 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .map(|p| p.next((host_pubkeys.clone(), T)).map(|(next, _)| next.unwrap()))
         .collect::<anyhow::Result<_>>()?;
+    
+    // 2. Execute step #1
 
     let mut pmsg1s: Vec<ParticipantMsg1> = Vec::with_capacity(N);
     let participants: Vec<ParticipantStep1State> = participants
         .into_iter()
         .map(|p| {
-            let random = [0u8; 32];
+            let random = [0u8; 32]; // TODO: generate good randomness 
             let (next, msg) = p.next(random)?;
             pmsg1s.push(msg);
             Ok(next.unwrap())
@@ -130,6 +137,8 @@ fn main() -> anyhow::Result<()> {
 
     let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
     let coordinator = coordinator.unwrap();
+    
+    // 3. Execute step #2
 
     let mut pmsg2s: Vec<ParticipantMsg2> = Vec::with_capacity(N);
     let participants: Vec<ParticipantStep2State> = participants
@@ -142,12 +151,20 @@ fn main() -> anyhow::Result<()> {
         })
         .collect::<anyhow::Result<_>>()?;
 
+    // Coordinator obtains DKG output immediately. 
+    // However, we should wait upon successful execution of the last message by each participant.
     let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s)?;
 
+    // 4. Execute final check
+    
     for participant in participants {
+        // Obtain DKG result from each participant.
         let (_, (participant_output, participant_recovery_data)) =
             participant.next(cmsg2.clone())?;
-
+        
+        // TODO: Securely save `participant_output.secshare`
+        
+        // Public data should be the same across all participants and coordinator.
         assert_eq!(
             participant_output.threshold_pubkey,
             coordinator_output.threshold_pubkey
