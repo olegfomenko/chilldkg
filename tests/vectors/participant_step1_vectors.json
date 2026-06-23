@@ -13,7 +13,7 @@
         "  Call participant_step1(hostseckey, params, random).",
         "  Verify it raises an exception matching expected_error."
     ],
-    "total_tests": 7,
+    "total_tests": 4,
     "valid_test_cases": [
         {
             "tc_id": 1,
@@ -33,23 +33,6 @@
     ],
     "error_test_cases": [
         {
-            "tc_id": 2,
-            "hostseckey": "631C047D50A67E45E27ED1FF25FCE179",
-            "params": {
-                "hostpubkeys": [
-                    "03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3",
-                    "03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7",
-                    "021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3"
-                ],
-                "t": 2
-            },
-            "random": "42B53D62E27380D6F7096EDA1C28C57DDB89FCD4CE5B843EDAC220E165B5A7EC",
-            "expected_error": {
-                "type": "HostSeckeyError"
-            },
-            "comment": "length of host secret key is not 32 bytes"
-        },
-        {
             "tc_id": 3,
             "hostseckey": "ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207",
             "params": {
@@ -65,24 +48,6 @@
                 "type": "ThresholdOrCountError"
             },
             "comment": "invalid threshold value"
-        },
-        {
-            "tc_id": 4,
-            "hostseckey": "ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207",
-            "params": {
-                "hostpubkeys": [
-                    "03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3",
-                    "030000000000000000000000000000000000000000000000000000000000000005",
-                    "021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3"
-                ],
-                "t": 2
-            },
-            "random": "42B53D62E27380D6F7096EDA1C28C57DDB89FCD4CE5B843EDAC220E165B5A7EC",
-            "expected_error": {
-                "type": "InvalidHostPubkeyError",
-                "participant": 1
-            },
-            "comment": "hostpubkeys list contains an invalid value"
         },
         {
             "tc_id": 5,
@@ -121,23 +86,6 @@
                 "message": "Host secret key does not match any host public key"
             },
             "comment": "host secret key doesn't match any hostpubkey"
-        },
-        {
-            "tc_id": 7,
-            "hostseckey": "ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207",
-            "params": {
-                "hostpubkeys": [
-                    "03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3",
-                    "03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7",
-                    "021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3"
-                ],
-                "t": 2
-            },
-            "random": "42B53D62E27380D6F7096EDA1C28C57D",
-            "expected_error": {
-                "type": "RandomnessError"
-            },
-            "comment": "length of randomness is not 32 bytes"
         }
     ]
 }

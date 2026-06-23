@@ -1,14 +1,14 @@
 #![allow(dead_code, non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{
-    ExpectedError, Params, assert_expected_error, get_idx, parse_coordinator_msg1, parse_hex_array,
+    ExpectedError, Params, assert_expected_error, parse_coordinator_msg1, parse_hex_array,
     parse_host_pubkeys, parse_participant_msg1, parse_participant_msg2, parse_scalar_hex,
 };
 use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::ParticipantMsg2;
 use chilldkg::party::{ParticipantInitialState, ParticipantState};
-use k256::{ProjectivePoint, Scalar};
+use k256::ProjectivePoint;
 use serde::Deserialize;
 
 pub mod common;
@@ -78,19 +78,17 @@ fn load_vectors() -> Result<VectorFile> {
 }
 
 fn run_participant_step2(vectors: &VectorFile, cmsg1_hex: &str) -> Result<ParticipantMsg2> {
-    let s = parse_scalar_hex(&vectors.hostseckey)
-        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
-    if s == Scalar::ZERO {
-        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
-    }
-
+    let s = parse_scalar_hex(&vectors.hostseckey)?;
     let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
-    let idx = get_idx(&host_pubkeys, &(ProjectivePoint::GENERATOR * s))?;
+    let idx = host_pubkeys
+        .iter()
+        .position(|P_i| *P_i == ProjectivePoint::GENERATOR * s)
+        .context("host secret key does not match host public keys")?;
     let initial = ParticipantInitialState { idx, s };
     let (next, ()) = initial.next((host_pubkeys, vectors.params.t))?;
     let (next, pmsg1) = next
         .context("missing participant params state")?
-        .next(parse_hex_array(&vectors.random).map_err(|_| ChillDkgError::RandomnessError)?)?;
+        .next(parse_hex_array(&vectors.random)?)?;
     assert_eq!(
         pmsg1,
         parse_participant_msg1(

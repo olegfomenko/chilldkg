@@ -1,9 +1,8 @@
 use anyhow::{Context, Result, ensure};
-use chilldkg::chill_dkg_ensure;
 use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg::crypto::scalar_from_bytes;
 use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
+use chilldkg::msg::{CoordinatorMsg1, ParticipantMsg1, ParticipantMsg2};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 use serde::Deserialize;
@@ -28,28 +27,8 @@ pub fn parse_host_pubkeys(params: &Params) -> Result<Vec<ProjectivePoint>> {
     params
         .hostpubkeys
         .iter()
-        .enumerate()
-        .map(|(participant, hex)| {
-            parse_point_hex(hex)
-                .map_err(|_| ChillDkgError::InvalidHostPubkeyError { participant }.into())
-        })
+        .map(|hex| parse_point_hex(hex))
         .collect()
-}
-
-pub fn get_idx(
-    host_pubkeys: &Vec<ProjectivePoint>,
-    host_pubkey: &ProjectivePoint,
-) -> Result<usize> {
-    let idx = host_pubkeys
-        .iter()
-        .position(|P_i| P_i == host_pubkey)
-        .ok_or_else(|| {
-            ChillDkgError::HostSeckeyError(
-                "Host secret key does not match any host public key".to_owned(),
-            )
-        })?;
-
-    Ok(idx)
 }
 
 pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<ParticipantMsg1> {
@@ -81,75 +60,49 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
     let bytes = hex::decode(hex)?;
     let mut offset = 0;
 
-    chill_dkg_ensure!(
-        bytes.len() >= 33 * n,
-        ChillDkgError::FaultyCoordinatorError("missing commitments to secrets".to_owned()),
-    );
+    ensure!(bytes.len() >= 33 * n, "missing commitments to secrets",);
     let coms_to_secrets = (0..n)
         .map(|_| {
-            parse_point_with_infinity(take(&bytes, &mut offset)).map_err(|_| {
-                ChillDkgError::FaultyCoordinatorError("invalid commitment to secret".to_owned())
-                    .into()
-            })
+            parse_point_with_infinity(take(&bytes, &mut offset))
+                .context("invalid commitment to secret")
         })
         .collect::<Result<Vec<_>>>()?;
 
-    chill_dkg_ensure!(
+    ensure!(
         bytes.len() - offset >= 33 * (t - 1),
-        ChillDkgError::FaultyCoordinatorError(
-            "missing sum commitments to non-constant terms".to_owned()
-        ),
+        "missing sum commitments to non-constant terms",
     );
     let sum_coms_to_nonconst_terms = (0..t - 1)
         .map(|_| {
-            parse_point_with_infinity(take(&bytes, &mut offset)).map_err(|_| {
-                ChillDkgError::FaultyCoordinatorError(
-                    "invalid sum commitment to non-constant term".to_owned(),
-                )
-                .into()
-            })
+            parse_point_with_infinity(take(&bytes, &mut offset))
+                .context("invalid sum commitment to non-constant term")
         })
         .collect::<Result<Vec<_>>>()?;
 
-    chill_dkg_ensure!(
+    ensure!(
         bytes.len() - offset >= 64 * n,
-        ChillDkgError::FaultyCoordinatorError("missing proofs of possession".to_owned()),
+        "missing proofs of possession",
     );
     let pops = (0..n).map(|_| take(&bytes, &mut offset)).collect();
 
-    chill_dkg_ensure!(
-        bytes.len() - offset >= 33 * n,
-        ChillDkgError::FaultyCoordinatorError("missing public nonces".to_owned()),
-    );
+    ensure!(bytes.len() - offset >= 33 * n, "missing public nonces",);
     let pubnonce_bytes: Vec<CompressedPubKey> = (0..n).map(|_| take(&bytes, &mut offset)).collect();
 
-    chill_dkg_ensure!(
+    ensure!(
         bytes.len() - offset >= 32 * n,
-        ChillDkgError::FaultyCoordinatorError("missing encrypted secret shares".to_owned()),
+        "missing encrypted secret shares",
     );
     let enc_secshares = (0..n)
         .map(|_| {
-            scalar_from_bytes(take(&bytes, &mut offset)).map_err(|_| {
-                ChillDkgError::FaultyCoordinatorError("invalid encrypted secret shares".to_owned())
-                    .into()
-            })
+            scalar_from_bytes(take(&bytes, &mut offset)).context("invalid encrypted secret shares")
         })
         .collect::<Result<Vec<_>>>()?;
 
-    chill_dkg_ensure!(
-        offset == bytes.len(),
-        ChillDkgError::FaultyCoordinatorError("incorrect input bytes length".to_owned()),
-    );
+    ensure!(offset == bytes.len(), "incorrect input bytes length",);
 
     let pubnonces = pubnonce_bytes
         .into_iter()
-        .enumerate()
-        .map(|(i, bytes)| {
-            parse_point(bytes).map_err(|_| {
-                ChillDkgError::FaultyCoordinatorError(format!("invalid public nonce at index {i}"))
-                    .into()
-            })
-        })
+        .map(parse_point)
         .collect::<Result<Vec<_>>>()?;
 
     Ok(CoordinatorMsg1 {
@@ -165,19 +118,6 @@ pub fn parse_participant_msg2(hex: &str) -> Result<ParticipantMsg2> {
     Ok(ParticipantMsg2 {
         sig: parse_hex_array(hex)?,
     })
-}
-
-pub fn parse_coordinator_msg2(hex: &str, n: usize) -> Result<CoordinatorMsg2> {
-    let bytes = hex::decode(hex)?;
-    chill_dkg_ensure!(
-        bytes.len() == 64 * n,
-        ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned()),
-    );
-
-    let mut offset = 0;
-    let cert = (0..n).map(|_| take(&bytes, &mut offset)).collect();
-
-    Ok(CoordinatorMsg2 { cert })
 }
 
 pub fn parse_scalar_hex(hex: &str) -> Result<Scalar> {

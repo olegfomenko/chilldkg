@@ -2,15 +2,15 @@
 
 use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::RecoveryData;
+use chilldkg::msg::{CoordinatorMsg2, RecoveryData};
 use chilldkg::party::{DKGOutput, ParticipantInitialState, ParticipantState};
-use k256::{ProjectivePoint, Scalar};
+use k256::ProjectivePoint;
 use serde::Deserialize;
 
 use crate::common::{
-    ExpectedError, Params, assert_expected_error, get_idx, parse_coordinator_msg1,
-    parse_coordinator_msg2, parse_hex_array, parse_host_pubkeys, parse_participant_msg1,
-    parse_participant_msg2, parse_point_hex, parse_scalar_hex,
+    ExpectedError, Params, assert_expected_error, parse_coordinator_msg1, parse_hex_array,
+    parse_host_pubkeys, parse_participant_msg1, parse_participant_msg2, parse_point_hex,
+    parse_scalar_hex,
 };
 
 pub mod common;
@@ -103,19 +103,17 @@ fn run_participant_finalize(
     vectors: &VectorFile,
     cmsg2_hex: &str,
 ) -> Result<(DKGOutput, RecoveryData)> {
-    let s = parse_scalar_hex(&vectors.hostseckey)
-        .map_err(|_| ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()))?;
-    if s == Scalar::ZERO {
-        return Err(ChillDkgError::HostSeckeyError("invalid host secret key".to_owned()).into());
-    }
-
+    let s = parse_scalar_hex(&vectors.hostseckey)?;
     let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
-    let idx = get_idx(&host_pubkeys, &(ProjectivePoint::GENERATOR * s))?;
+    let idx = host_pubkeys
+        .iter()
+        .position(|P_i| *P_i == ProjectivePoint::GENERATOR * s)
+        .context("host secret key does not match host public keys")?;
     let initial = ParticipantInitialState { idx, s };
     let (next, ()) = initial.next((host_pubkeys, vectors.params.t))?;
     let (next, pmsg1) = next
         .context("missing participant params state")?
-        .next(parse_hex_array(&vectors.random).map_err(|_| ChillDkgError::RandomnessError)?)?;
+        .next(parse_hex_array(&vectors.random)?)?;
     assert_eq!(
         pmsg1,
         parse_participant_msg1(
@@ -142,6 +140,20 @@ fn run_participant_finalize(
         .next(cmsg2)?;
 
     Ok(output)
+}
+
+fn parse_coordinator_msg2(hex: &str, _n: usize) -> Result<CoordinatorMsg2> {
+    let bytes = hex::decode(hex)?;
+    let cert = bytes
+        .chunks_exact(64)
+        .map(|chunk| {
+            let mut sig = [0u8; 64];
+            sig.copy_from_slice(chunk);
+            sig
+        })
+        .collect();
+
+    Ok(CoordinatorMsg2 { cert })
 }
 
 fn serialize_recovery_data(recovery_data: &RecoveryData) -> Vec<u8> {
@@ -183,11 +195,4 @@ fn assert_expected_output(
     );
 
     Ok(())
-}
-
-fn take<const N: usize>(bytes: &[u8], offset: &mut usize) -> [u8; N] {
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes[*offset..*offset + N]);
-    *offset += N;
-    out
 }
