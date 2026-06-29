@@ -52,24 +52,8 @@ pub struct CertEQSigner {
 }
 
 impl CertEQSigner {
-    fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
-        //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
-        //   || uint32_be(idx)
-        //   || transcript
-
-        let tag = TAG_CERTEQ_MESSAGE.as_bytes();
-        let mut message = Vec::with_capacity(33 + 4 + transcript.len());
-
-        message.extend_from_slice(tag);
-        message.resize(33, 0);
-        message.extend_from_slice(&(idx as u32).to_be_bytes());
-        message.extend_from_slice(transcript);
-
-        message
-    }
-
     pub fn new(hostkey: Scalar, transcript: &[u8], idx: usize, aux_rand: [u8; 32]) -> Self {
-        let message = CertEQSigner::certeq_message(transcript, idx);
+        let message = get_certeq_message(transcript, idx);
         CertEQSigner {
             hostkey,
             message,
@@ -125,24 +109,8 @@ pub struct CertEQVerifier {
 }
 
 impl CertEQVerifier {
-    fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
-        //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
-        //   || uint32_be(idx)
-        //   || transcript
-
-        let tag = TAG_CERTEQ_MESSAGE.as_bytes();
-        let mut message = Vec::with_capacity(33 + 4 + transcript.len());
-
-        message.extend_from_slice(tag);
-        message.resize(33, 0);
-        message.extend_from_slice(&(idx as u32).to_be_bytes());
-        message.extend_from_slice(transcript);
-
-        message
-    }
-
     pub fn new(host_pubkey: ProjectivePoint, transcript: &[u8], idx: usize) -> Self {
-        let message = CertEQVerifier::certeq_message(transcript, idx);
+        let message = get_certeq_message(transcript, idx);
         CertEQVerifier {
             host_pubkey,
             message,
@@ -178,4 +146,20 @@ fn get_certeq_challenge(
         TAG_BIP340_CHALLENGE,
         challenge_preimage,
     ))))
+}
+
+fn get_certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
+    //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
+    //   || uint32_be(idx)
+    //   || transcript
+
+    let tag = TAG_CERTEQ_MESSAGE.as_bytes();
+    let mut message = Vec::with_capacity(33 + 4 + transcript.len());
+
+    message.extend_from_slice(tag);
+    message.resize(33, 0);
+    message.extend_from_slice(&(idx as u32).to_be_bytes());
+    message.extend_from_slice(transcript);
+
+    message
 }
