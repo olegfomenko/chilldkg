@@ -150,15 +150,3 @@ pub struct CoordinatorStep1State {
     /// Coordinator's DKG output.
     pub dkg_output: CoordinatorDkgOutput,
 }
-
-#[derive(Clone, Debug)]
-pub struct CoordinatorFinalizeOutput {
-    /// Final coordinator message broadcast to participants.
-    pub coordinator_msg: crate::msg::CoordinatorMsg2,
-
-    /// Coordinator's DKG output.
-    pub dkg_output: CoordinatorDkgOutput,
-
-    /// Recovery data for the completed session.
-    pub recovery_data: RecoveryData,
-}
