@@ -1,10 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{get_certeq, get_certeq_transcript, verify_certeq};
+use crate::crypto::certeq::{CertEQSigner, CertEQVerifier, get_certeq_transcript};
 use crate::crypto::ec::{compress_default, eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
-use crate::crypto::pop::{chilldkg_pop_sign, chilldkg_pop_verify};
+use crate::crypto::pop::{PopSigner, PopVerifier};
+use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use crate::errors::ChillDkgError;
@@ -80,14 +81,15 @@ impl ParticipantState for ParticipantParamsState {
 
         let commitment: Vec<ProjectivePoint> = polynomial.commit();
 
-        let pop = chilldkg_pop_sign(
-            &simpl_seed,
+        let pop = PopSigner::new(
             polynomial
                 .coeff(0)
                 .context("Free term must exist")?
                 .to_owned(),
+            simpl_seed,
             self.idx as u32,
-        )?;
+        )
+        .sign()?;
 
         let pubnonce = ProjectivePoint::GENERATOR * r;
 
@@ -158,12 +160,9 @@ impl ParticipantState for ParticipantStep1State {
             );
 
             chill_dkg_ensure!(
-                chilldkg_pop_verify(
-                    &coordinator_msg.pops[i],
-                    &coordinator_msg.coms_to_secrets[i],
-                    i as u32,
-                )
-                .is_ok(),
+                PopVerifier::new(coordinator_msg.coms_to_secrets[i], i as u32)
+                    .verify(coordinator_msg.pops[i])
+                    .is_ok(),
                 ChillDkgError::FaultyParticipantOrCoordinatorError {
                     participant: i,
                     message: "Participant sent invalid proof-of-knowledge".to_owned(),
@@ -213,7 +212,7 @@ impl ParticipantState for ParticipantStep1State {
             &coordinator_msg.enc_secshares,
         );
 
-        let sig = get_certeq(self.s, self.idx, &transcript, &aux)?;
+        let sig = CertEQSigner::new(self.s, &transcript, self.idx, aux).sign()?;
 
         let dkg_output = DKGOutput {
             idx: self.idx,
@@ -245,7 +244,7 @@ impl ParticipantState for ParticipantStep2State {
 
         for i in 0..self.host_pubkeys.len() {
             if let Err(err) =
-                verify_certeq(&self.host_pubkeys[i], i, &self.transcript, &msg.cert[i])
+                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
             {
                 return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
                     participant: i,

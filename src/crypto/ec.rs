@@ -39,7 +39,7 @@ pub fn compress_point_bip340(point: &ProjectivePoint) -> BIP340XOnlyPubKey {
 }
 
 /// Forces point to be even-y
-pub fn event_y_point(point: &ProjectivePoint) -> ProjectivePoint {
+pub fn even_y_point(point: &ProjectivePoint) -> ProjectivePoint {
     if bool::from(point.is_identity()) {
         ProjectivePoint::IDENTITY
     } else if bool::from(point.to_affine().y_is_odd()) {

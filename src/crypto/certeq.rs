@@ -1,17 +1,13 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::ec::{
-    compress_default, compress_point_bip340, compress_scalar_bip340, event_y_point,
-};
-use crate::crypto::pop::SchnorrSignature;
+use crate::crypto::ec::{BIP340XOnlyPubKey, compress_default, compress_scalar_bip340};
+use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
+use crate::crypto::tagged_hash;
 use crate::crypto::tags::{
     TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
 };
-use crate::crypto::{scalar_from_bytes, tagged_hash};
-use anyhow::{Context, Result, bail, ensure};
-use k256::elliptic_curve::Group;
+use anyhow::{Result, ensure};
 use k256::elliptic_curve::ops::Reduce;
-use k256::elliptic_curve::point::AffineCoordinates;
 use k256::{ProjectivePoint, Scalar, U256};
 
 /// Builds a transcript bytes. Then, this transcript hash will be signed to create
@@ -49,127 +45,137 @@ pub fn get_certeq_transcript(
     eq_input
 }
 
-pub fn get_certeq(
-    s: Scalar,
-    idx: usize,
-    transcript: &[u8],
-    aux_rand: &[u8; 32],
-) -> Result<SchnorrSignature> {
-    ensure!(
-        !bool::from(s.is_zero()),
-        "CertEq signing failed: BIP340: secret key is zero"
-    );
-
-    let msg = certeq_message(transcript, idx);
-    let (p_x, d) = compress_scalar_bip340(&s);
-    let aux_hash = tagged_hash(TAG_BIP340_AUX, aux_rand);
-
-    let mut t: [u8; 32] = d.to_bytes().into();
-    for i in 0..32 {
-        t[i] ^= aux_hash[i];
-    }
-
-    let mut nonce_preimage = Vec::with_capacity(32 + 32 + msg.len());
-    nonce_preimage.extend_from_slice(&t);
-    nonce_preimage.extend_from_slice(&p_x);
-    nonce_preimage.extend_from_slice(&msg);
-
-    let k0 = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_BIP340_NONCE,
-        nonce_preimage,
-    )));
-    ensure!(
-        !bool::from(k0.is_zero()),
-        "CertEq signing failed: BIP340: nonce is zero"
-    );
-
-    let (r_x, k) = compress_scalar_bip340(&k0);
-
-    let mut challenge_preimage = Vec::with_capacity(32 + 32 + msg.len());
-    challenge_preimage.extend_from_slice(&r_x);
-    challenge_preimage.extend_from_slice(&p_x);
-    challenge_preimage.extend_from_slice(&msg);
-
-    let e = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_BIP340_CHALLENGE,
-        challenge_preimage,
-    )));
-
-    let s: [u8; 32] = (k + e * d).to_bytes().into();
-
-    let mut sig = [0u8; 64];
-    sig[..32].copy_from_slice(&r_x);
-    sig[32..].copy_from_slice(&s);
-    Ok(sig)
+pub struct CertEQSigner {
+    hostkey: Scalar,
+    message: Vec<u8>,
+    aux_rand: [u8; 32],
 }
 
-pub fn verify_certeq(
-    host_pubkey: &ProjectivePoint,
-    idx: usize,
-    transcript: &[u8],
-    sig: &SchnorrSignature,
-) -> Result<()> {
-    ensure!(
-        !bool::from(host_pubkey.is_identity()),
-        "CertEq verification failed: host public key is identity"
-    );
+impl CertEQSigner {
+    fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
+        //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
+        //   || uint32_be(idx)
+        //   || transcript
 
-    let msg = certeq_message(transcript, idx);
+        let tag = TAG_CERTEQ_MESSAGE.as_bytes();
+        let mut message = Vec::with_capacity(33 + 4 + transcript.len());
 
-    let mut r_x = [0u8; 32];
-    r_x.copy_from_slice(&sig[..32]);
+        message.extend_from_slice(tag);
+        message.resize(33, 0);
+        message.extend_from_slice(&(idx as u32).to_be_bytes());
+        message.extend_from_slice(transcript);
 
-    let mut s_bytes = [0u8; 32];
-    s_bytes.copy_from_slice(&sig[32..]);
-
-    let s = scalar_from_bytes(s_bytes)
-        .context("CertEq verification failed: invalid response scalar")?;
-
-    let P = event_y_point(host_pubkey);
-    let P_x = compress_point_bip340(host_pubkey);
-
-    let mut challenge_preimage = Vec::with_capacity(32 + 32 + msg.len());
-    challenge_preimage.extend_from_slice(&r_x);
-    challenge_preimage.extend_from_slice(&P_x);
-    challenge_preimage.extend_from_slice(&msg);
-
-    let e = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_BIP340_CHALLENGE,
-        challenge_preimage,
-    )));
-
-    let R = ProjectivePoint::GENERATOR * s - P * e;
-    ensure!(
-        !bool::from(R.is_identity()),
-        "CertEq verification failed: nonce is identity"
-    );
-
-    let R = R.to_affine();
-    ensure!(
-        !bool::from(R.y_is_odd()),
-        "CertEq verification failed: nonce has odd Y"
-    );
-
-    let computed_r_x: [u8; 32] = R.x().into();
-    if computed_r_x != r_x {
-        bail!("CertEq verification failed: invalid signature");
+        message
     }
 
-    Ok(())
+    pub fn new(hostkey: Scalar, transcript: &[u8], idx: usize, aux_rand: [u8; 32]) -> Self {
+        let message = CertEQSigner::certeq_message(transcript, idx);
+        CertEQSigner {
+            hostkey,
+            message,
+            aux_rand,
+        }
+    }
 }
 
-fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
-    //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
-    //   || uint32_be(idx)
-    //   || transcript
+impl SchnorrSigner for CertEQSigner {
+    fn message(&self) -> &[u8] {
+        self.message.as_slice()
+    }
 
-    let tag = TAG_CERTEQ_MESSAGE.as_bytes();
-    let mut message = Vec::with_capacity(33 + 4 + transcript.len());
+    fn secret_key(&self) -> Scalar {
+        self.hostkey
+    }
 
-    message.extend_from_slice(tag);
-    message.resize(33, 0);
-    message.extend_from_slice(&(idx as u32).to_be_bytes());
-    message.extend_from_slice(transcript);
+    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)> {
+        let (p_x, d) = self.x_only_key();
+        let aux_hash = tagged_hash(TAG_BIP340_AUX, self.aux_rand);
 
-    message
+        let mut t: [u8; 32] = d.to_bytes().into();
+        for i in 0..32 {
+            t[i] ^= aux_hash[i];
+        }
+
+        let mut nonce_preimage = Vec::with_capacity(32 + 32 + self.message().len());
+        nonce_preimage.extend_from_slice(&t);
+        nonce_preimage.extend_from_slice(&p_x);
+        nonce_preimage.extend_from_slice(&self.message());
+
+        let k0 = Scalar::reduce(U256::from_be_slice(&tagged_hash(
+            TAG_BIP340_NONCE,
+            nonce_preimage,
+        )));
+
+        ensure!(
+            !bool::from(k0.is_zero()),
+            "CertEq signing failed: BIP340: nonce is zero"
+        );
+
+        Ok(compress_scalar_bip340(&k0))
+    }
+
+    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
+        let mut challenge_preimage = Vec::with_capacity(32 + 32 + self.message().len());
+        challenge_preimage.extend_from_slice(R);
+        challenge_preimage.extend_from_slice(P);
+        challenge_preimage.extend_from_slice(&self.message());
+
+        Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+            TAG_BIP340_CHALLENGE,
+            challenge_preimage,
+        ))))
+    }
+}
+
+pub struct CertEQVerifier {
+    host_pubkey: ProjectivePoint,
+    message: Vec<u8>,
+}
+
+impl CertEQVerifier {
+    fn certeq_message(transcript: &[u8], idx: usize) -> Vec<u8> {
+        //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
+        //   || uint32_be(idx)
+        //   || transcript
+
+        let tag = TAG_CERTEQ_MESSAGE.as_bytes();
+        let mut message = Vec::with_capacity(33 + 4 + transcript.len());
+
+        message.extend_from_slice(tag);
+        message.resize(33, 0);
+        message.extend_from_slice(&(idx as u32).to_be_bytes());
+        message.extend_from_slice(transcript);
+
+        message
+    }
+
+    pub fn new(host_pubkey: ProjectivePoint, transcript: &[u8], idx: usize) -> Self {
+        let message = CertEQVerifier::certeq_message(transcript, idx);
+        CertEQVerifier {
+            host_pubkey,
+            message,
+        }
+    }
+}
+
+impl SchnorrVerifier for CertEQVerifier {
+    fn message(&self) -> &[u8] {
+        self.message.as_slice()
+    }
+
+    fn pub_key(&self) -> ProjectivePoint {
+        self.host_pubkey
+    }
+
+    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
+        let mut challenge_preimage = Vec::with_capacity(32 + 32 + self.message().len());
+        challenge_preimage.extend_from_slice(R);
+        challenge_preimage.extend_from_slice(P);
+        challenge_preimage.extend_from_slice(&self.message());
+
+        Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+            TAG_BIP340_CHALLENGE,
+            challenge_preimage,
+        ))))
+    }
 }

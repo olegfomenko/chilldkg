@@ -2,6 +2,7 @@ pub mod certeq;
 pub mod ec;
 pub mod enc;
 pub mod pop;
+pub mod schnorr;
 pub mod tags;
 
 use anyhow::{Context, Result};

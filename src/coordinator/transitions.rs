@@ -4,8 +4,9 @@ use crate::chill_dkg_ensure;
 use crate::coordinator::{
     CoordinatorDkgOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
-use crate::crypto::certeq::{get_certeq_transcript, verify_certeq};
+use crate::crypto::certeq::{CertEQVerifier, get_certeq_transcript};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
+use crate::crypto::schnorr::SchnorrVerifier;
 use crate::errors::ChillDkgError;
 use crate::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
@@ -97,7 +98,7 @@ impl CoordinatorState for CoordinatorStep1State {
 
         for i in 0..self.host_pubkeys.len() {
             if let Err(err) =
-                verify_certeq(&self.host_pubkeys[i], i, &self.transcript, &msg.cert[i])
+                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
             {
                 return Err(ChillDkgError::FaultyParticipantError {
                     participant: i,
