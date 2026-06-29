@@ -115,15 +115,7 @@ impl SchnorrSigner for CertEQSigner {
     }
 
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        let mut challenge_preimage = Vec::with_capacity(32 + 32 + self.message().len());
-        challenge_preimage.extend_from_slice(R);
-        challenge_preimage.extend_from_slice(P);
-        challenge_preimage.extend_from_slice(&self.message());
-
-        Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_BIP340_CHALLENGE,
-            challenge_preimage,
-        ))))
+        get_certeq_challenge(R, P, self.message())
     }
 }
 
@@ -168,14 +160,22 @@ impl SchnorrVerifier for CertEQVerifier {
     }
 
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        let mut challenge_preimage = Vec::with_capacity(32 + 32 + self.message().len());
-        challenge_preimage.extend_from_slice(R);
-        challenge_preimage.extend_from_slice(P);
-        challenge_preimage.extend_from_slice(&self.message());
-
-        Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_BIP340_CHALLENGE,
-            challenge_preimage,
-        ))))
+        get_certeq_challenge(R, P, self.message())
     }
+}
+
+fn get_certeq_challenge(
+    R: &BIP340XOnlyPubKey,
+    P: &BIP340XOnlyPubKey,
+    message: &[u8],
+) -> Result<Scalar> {
+    let mut challenge_preimage = Vec::with_capacity(32 + 32 + message.len());
+    challenge_preimage.extend_from_slice(R);
+    challenge_preimage.extend_from_slice(P);
+    challenge_preimage.extend_from_slice(message);
+
+    Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+        TAG_BIP340_CHALLENGE,
+        challenge_preimage,
+    ))))
 }
