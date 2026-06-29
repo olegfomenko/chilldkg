@@ -1,7 +1,7 @@
 use crate::crypto::tags::TAG_VSS_COEFFS;
 use crate::crypto::{scalar_from_bytes, tagged_hash};
 use anyhow::Result;
-use k256::Scalar;
+use k256::{ProjectivePoint, Scalar};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Polynomial {
@@ -29,8 +29,19 @@ impl Polynomial {
             .fold(Scalar::ZERO, |acc, coefficient| acc * x + coefficient)
     }
 
+    pub fn eval_shares(&self, n: u64) -> Vec<Scalar> {
+        (0u64..n).map(|i| self.eval(Scalar::from(i + 1))).collect()
+    }
+
     pub fn coeff(&self, i: usize) -> Option<&Scalar> {
         self.coefficients.get(i)
+    }
+
+    pub fn commit(&self) -> Vec<ProjectivePoint> {
+        self.coefficients
+            .iter()
+            .map(|c| ProjectivePoint::GENERATOR * c)
+            .collect()
     }
 }
 
@@ -88,5 +99,51 @@ mod tests {
         };
 
         assert_eq!(polynomial.eval(scalar(4)), scalar(91));
+    }
+
+    #[test]
+    fn evaluates_shares_at_one_based_indices() {
+        let polynomial = Polynomial {
+            coefficients: vec![scalar(3), scalar(2), scalar(5)],
+        };
+
+        assert_eq!(
+            polynomial.eval_shares(4),
+            vec![scalar(10), scalar(27), scalar(54), scalar(91)]
+        );
+    }
+
+    #[test]
+    fn evaluates_zero_shares_as_empty_list() {
+        let polynomial = Polynomial {
+            coefficients: vec![scalar(3), scalar(2), scalar(5)],
+        };
+
+        assert_eq!(polynomial.eval_shares(0), Vec::<Scalar>::new());
+    }
+
+    #[test]
+    fn commits_coefficients_to_generator_multiples() {
+        let polynomial = Polynomial {
+            coefficients: vec![scalar(3), scalar(5), scalar(8)],
+        };
+
+        assert_eq!(
+            polynomial.commit(),
+            vec![
+                ProjectivePoint::GENERATOR * scalar(3),
+                ProjectivePoint::GENERATOR * scalar(5),
+                ProjectivePoint::GENERATOR * scalar(8),
+            ]
+        );
+    }
+
+    #[test]
+    fn commits_empty_polynomial_as_empty_list() {
+        let polynomial = Polynomial {
+            coefficients: vec![],
+        };
+
+        assert_eq!(polynomial.commit(), Vec::<ProjectivePoint>::new());
     }
 }

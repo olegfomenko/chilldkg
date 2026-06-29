@@ -76,14 +76,9 @@ impl ParticipantState for ParticipantParamsState {
 
         let polynomial = Polynomial::new(&simpl_seed, self.t)?;
 
-        let shares: Vec<Scalar> = (0..self.host_pubkeys.len())
-            .map(|i| polynomial.eval(Scalar::from((i + 1) as u64)))
-            .collect();
+        let shares: Vec<Scalar> = polynomial.eval_shares(self.host_pubkeys.len() as u64);
 
-        let commitment: Vec<ProjectivePoint> = polynomial
-            .into_iter()
-            .map(|coef| ProjectivePoint::GENERATOR * coef)
-            .collect();
+        let commitment: Vec<ProjectivePoint> = polynomial.commit();
 
         let pop = chilldkg_pop_sign(
             &simpl_seed,
