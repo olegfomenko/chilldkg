@@ -141,91 +141,115 @@ impl SchnorrVerifier for PopVerifier {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     fn scalar(value: u64) -> Scalar {
-//         Scalar::from(value)
-//     }
-//
-//     #[test]
-//     fn generated_pop_verifies_for_matching_key_and_index() {
-//         let seed = [7u8; 32];
-//         let a0 = scalar(42);
-//         let idx = 3;
-//         let pop = chilldkg_pop_sign(&seed, a0, idx).unwrap();
-//
-//         chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), idx).unwrap();
-//     }
-//
-//     #[test]
-//     fn generated_pop_is_deterministic_for_same_inputs() {
-//         let seed = [9u8; 32];
-//         let a0 = scalar(123);
-//         let idx = 1;
-//
-//         assert_eq!(
-//             chilldkg_pop_sign(&seed, a0, idx).unwrap(),
-//             chilldkg_pop_sign(&seed, a0, idx).unwrap()
-//         );
-//     }
-//
-//     #[test]
-//     fn generated_pop_changes_with_seed() {
-//         let a0 = scalar(42);
-//         let idx = 3;
-//
-//         assert_ne!(
-//             chilldkg_pop_sign(&[1u8; 32], a0, idx).unwrap(),
-//             chilldkg_pop_sign(&[2u8; 32], a0, idx).unwrap()
-//         );
-//     }
-//
-//     #[test]
-//     fn verification_rejects_wrong_index() {
-//         let seed = [7u8; 32];
-//         let a0 = scalar(42);
-//         let pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-//
-//         assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 4).is_err());
-//     }
-//
-//     #[test]
-//     fn verification_rejects_wrong_pubkey() {
-//         let seed = [7u8; 32];
-//         let pop = chilldkg_pop_sign(&seed, scalar(42), 3).unwrap();
-//         let wrong_pubkey = ProjectivePoint::GENERATOR * scalar(43);
-//
-//         assert!(chilldkg_pop_verify(&pop, &wrong_pubkey, 3).is_err());
-//     }
-//
-//     #[test]
-//     fn verification_rejects_tampered_public_nonce() {
-//         let seed = [7u8; 32];
-//         let a0 = scalar(42);
-//         let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-//
-//         pop[0] ^= 1;
-//
-//         assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 3).is_err());
-//     }
-//
-//     #[test]
-//     fn verification_rejects_tampered_response() {
-//         let seed = [7u8; 32];
-//         let a0 = scalar(42);
-//         let mut pop = chilldkg_pop_sign(&seed, a0, 3).unwrap();
-//
-//         pop[63] ^= 1;
-//
-//         assert!(chilldkg_pop_verify(&pop, &(ProjectivePoint::GENERATOR * a0), 3).is_err());
-//     }
-//
-//     #[test]
-//     fn signing_rejects_zero_secret() {
-//         let seed = [7u8; 32];
-//
-//         assert!(chilldkg_pop_sign(&seed, Scalar::ZERO, 0).is_err());
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar(value: u64) -> Scalar {
+        Scalar::from(value)
+    }
+
+    fn sign_pop(seed: [u8; 32], a0: Scalar, idx: u32) -> SchnorrSignature {
+        PopSigner::new(a0, seed, idx).sign().unwrap()
+    }
+
+    #[test]
+    fn generated_pop_verifies_for_matching_key_and_index() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let idx = 3;
+        let pop = sign_pop(seed, a0, idx);
+
+        PopVerifier::new(ProjectivePoint::GENERATOR * a0, idx)
+            .verify(pop)
+            .unwrap();
+    }
+
+    #[test]
+    fn generated_pop_is_deterministic_for_same_inputs() {
+        let seed = [9u8; 32];
+        let a0 = scalar(123);
+        let idx = 1;
+
+        assert_eq!(sign_pop(seed, a0, idx), sign_pop(seed, a0, idx));
+    }
+
+    #[test]
+    fn generated_pop_changes_with_seed() {
+        let a0 = scalar(42);
+        let idx = 3;
+
+        assert_ne!(sign_pop([1u8; 32], a0, idx), sign_pop([2u8; 32], a0, idx));
+    }
+
+    #[test]
+    fn verification_rejects_wrong_index() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let pop = sign_pop(seed, a0, 3);
+
+        assert!(
+            PopVerifier::new(ProjectivePoint::GENERATOR * a0, 4)
+                .verify(pop)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn verification_rejects_wrong_pubkey() {
+        let seed = [7u8; 32];
+        let pop = sign_pop(seed, scalar(42), 3);
+        let wrong_pubkey = ProjectivePoint::GENERATOR * scalar(43);
+
+        assert!(PopVerifier::new(wrong_pubkey, 3).verify(pop).is_err());
+    }
+
+    #[test]
+    fn verification_rejects_identity_pubkey() {
+        let seed = [7u8; 32];
+        let pop = sign_pop(seed, scalar(42), 3);
+
+        assert!(
+            PopVerifier::new(ProjectivePoint::IDENTITY, 3)
+                .verify(pop)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn verification_rejects_tampered_public_nonce() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let mut pop = sign_pop(seed, a0, 3);
+
+        pop[0] ^= 1;
+
+        assert!(
+            PopVerifier::new(ProjectivePoint::GENERATOR * a0, 3)
+                .verify(pop)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn verification_rejects_tampered_response() {
+        let seed = [7u8; 32];
+        let a0 = scalar(42);
+        let mut pop = sign_pop(seed, a0, 3);
+
+        pop[63] ^= 1;
+
+        assert!(
+            PopVerifier::new(ProjectivePoint::GENERATOR * a0, 3)
+                .verify(pop)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn signing_rejects_zero_secret() {
+        let seed = [7u8; 32];
+
+        assert!(PopSigner::new(Scalar::ZERO, seed, 0).sign().is_err());
+    }
+}

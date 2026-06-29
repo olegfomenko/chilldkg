@@ -49,6 +49,11 @@ pub trait SchnorrVerifier {
     }
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
     fn verify(&self, sig: SchnorrSignature) -> Result<()> {
+        ensure!(
+            !bool::from(self.pub_key().is_identity()),
+            "Schnorr verification failed: public key is identity"
+        );
+
         let mut r_x = [0u8; 32];
         r_x.copy_from_slice(&sig[..32]);
 
@@ -56,7 +61,7 @@ pub trait SchnorrVerifier {
         s_bytes.copy_from_slice(&sig[32..]);
 
         let s = scalar_from_bytes(s_bytes)
-            .context("CertEq verification failed: invalid response scalar")?;
+            .context("Schnorr verification failed: invalid response scalar")?;
 
         let (P, p_x) = self.x_only_pubkey();
         let e = self.challenge(&r_x, &p_x)?;
@@ -64,18 +69,18 @@ pub trait SchnorrVerifier {
         let R = ProjectivePoint::GENERATOR * s - P * e;
         ensure!(
             !bool::from(R.is_identity()),
-            "CertEq verification failed: nonce is identity"
+            "Schnorr verification failed: nonce is identity"
         );
 
         let R = R.to_affine();
         ensure!(
             !bool::from(R.y_is_odd()),
-            "CertEq verification failed: nonce has odd Y"
+            "Schnorr verification failed: nonce has odd Y"
         );
 
         let computed_r_x: [u8; 32] = R.x().into();
         if computed_r_x != r_x {
-            bail!("CertEq verification failed: invalid signature");
+            bail!("Schnorr verification failed: invalid signature");
         }
 
         Ok(())
