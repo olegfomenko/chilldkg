@@ -4,6 +4,7 @@ pub mod enc;
 pub mod pop;
 pub mod schnorr;
 pub mod tags;
+pub mod poly;
 
 use anyhow::{Context, Result};
 use k256::elliptic_curve::PrimeField;
