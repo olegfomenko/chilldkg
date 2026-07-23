@@ -8,7 +8,6 @@ use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::ParticipantMsg2;
 use chilldkg::party::{ParticipantInitialState, ParticipantState};
-use k256::ProjectivePoint;
 use serde::Deserialize;
 
 pub mod common;
@@ -80,15 +79,12 @@ fn load_vectors() -> Result<VectorFile> {
 fn run_participant_step2(vectors: &VectorFile, cmsg1_hex: &str) -> Result<ParticipantMsg2> {
     let s = parse_scalar_hex(&vectors.hostseckey)?;
     let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
-    let idx = host_pubkeys
-        .iter()
-        .position(|P_i| *P_i == ProjectivePoint::GENERATOR * s)
-        .context("host secret key does not match host public keys")?;
-    let initial = ParticipantInitialState { idx, s };
-    let (next, ()) = initial.next((host_pubkeys, vectors.params.t))?;
-    let (next, pmsg1) = next
-        .context("missing participant params state")?
-        .next(parse_hex_array(&vectors.random)?)?;
+    let initial = ParticipantInitialState { s };
+    let (next, pmsg1) = initial.next((
+        host_pubkeys,
+        vectors.params.t,
+        parse_hex_array(&vectors.random)?,
+    ))?;
     assert_eq!(
         pmsg1,
         parse_participant_msg1(

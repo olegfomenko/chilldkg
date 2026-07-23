@@ -1,10 +1,10 @@
 pub mod certeq;
 pub mod ec;
 pub mod enc;
+pub mod poly;
 pub mod pop;
 pub mod schnorr;
 pub mod tags;
-pub mod poly;
 
 use anyhow::{Context, Result};
 use k256::elliptic_curve::PrimeField;

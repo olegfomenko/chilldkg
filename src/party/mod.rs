@@ -1,3 +1,5 @@
+#![allow(non_snake_case)] // Uppercase identifiers denote curve points.
+
 use crate::chill_dkg_ensure;
 use crate::errors::ChillDkgError;
 use crate::msg::CoordinatorMsg1;
@@ -18,11 +20,6 @@ pub trait ParticipantState: Sized {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantInitialState {
-    /// Participant index.
-    ///
-    /// Math: `i`.
-    pub idx: usize,
-
     /// Participant host secret key.
     ///
     /// Math: `s_i`.
@@ -30,38 +27,15 @@ pub struct ParticipantInitialState {
 }
 
 impl ParticipantInitialState {
-    pub fn new(idx: usize, rng: &mut impl CryptoRngCore) -> Self {
+    pub fn new(rng: &mut impl CryptoRngCore) -> Self {
         let s = *NonZeroScalar::random(rng).as_ref();
 
-        Self { idx, s }
+        Self { s }
     }
 
     pub fn get_host_key(&self) -> ProjectivePoint {
         ProjectivePoint::GENERATOR * self.s
     }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct ParticipantParamsState {
-    /// Participant index.
-    ///
-    /// Math: `i`.
-    pub idx: usize,
-
-    /// DKG threshold.
-    ///
-    /// Math: `t`.
-    pub t: usize,
-
-    /// Participant host secret key.
-    ///
-    /// Math: `s_i`.
-    pub s: Scalar,
-
-    /// Ordered participant host public keys.
-    ///
-    /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -141,30 +115,22 @@ pub struct ParticipantStep2State {
     pub dkg_output: DKGOutput,
 }
 
-impl ParticipantParamsState {
-    fn validate_session_params(&self) -> Result<()> {
+impl ParticipantInitialState {
+    fn validate_session_params(&self, host_pubkeys: &[ProjectivePoint], t: usize) -> Result<usize> {
         chill_dkg_ensure!(
-            self.t >= 1
-                && self.t <= self.host_pubkeys.len()
-                && self.host_pubkeys.len() <= u32::MAX as usize,
+            t >= 1 && t <= host_pubkeys.len() && host_pubkeys.len() <= u32::MAX as usize,
             ChillDkgError::ThresholdOrCountError,
         );
-        chill_dkg_ensure!(
-            self.idx < self.host_pubkeys.len(),
-            ChillDkgError::ValueError(
-                "participant index is out of range for host public keys".to_owned()
-            ),
-        );
 
-        for (i, pubkey) in self.host_pubkeys.iter().enumerate() {
+        for (i, pubkey) in host_pubkeys.iter().enumerate() {
             chill_dkg_ensure!(
                 !bool::from(pubkey.is_identity()),
                 ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
-            for j in (i + 1)..self.host_pubkeys.len() {
+            for j in (i + 1)..host_pubkeys.len() {
                 chill_dkg_ensure!(
-                    *pubkey != self.host_pubkeys[j],
+                    *pubkey != host_pubkeys[j],
                     ChillDkgError::DuplicateHostPubkeyError {
                         participant1: i,
                         participant2: j,
@@ -173,14 +139,15 @@ impl ParticipantParamsState {
             }
         }
 
-        chill_dkg_ensure!(
-            self.host_pubkeys[self.idx] == (ProjectivePoint::GENERATOR * self.s),
-            ChillDkgError::HostSeckeyError(
-                "Host secret key does not match any host public key".to_owned()
-            ),
-        );
-
-        Ok(())
+        host_pubkeys
+            .iter()
+            .position(|P_i| *P_i == ProjectivePoint::GENERATOR * self.s)
+            .ok_or(
+                ChillDkgError::HostSeckeyError(
+                    "Host secret key does not match any host public key".to_owned(),
+                )
+                .into(),
+            )
     }
 }
 

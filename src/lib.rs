@@ -9,8 +9,7 @@ mod tests {
     use crate::coordinator::{CoordinatorInitialState, CoordinatorState};
     use crate::msg::{ParticipantMsg1, ParticipantMsg2};
     use crate::party::{
-        ParticipantInitialState, ParticipantParamsState, ParticipantState, ParticipantStep1State,
-        ParticipantStep2State,
+        ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
     };
     use k256::ProjectivePoint;
     use k256::elliptic_curve::sec1::ToEncodedPoint;
@@ -26,17 +25,12 @@ mod tests {
         // --------------- INIT PHASE ---------------
 
         let parties: Vec<ParticipantInitialState> = (0..N)
-            .map(|idx| ParticipantInitialState::new(idx, &mut rng))
+            .map(|_| ParticipantInitialState::new(&mut rng))
             .collect();
 
         let host_keys: Vec<ProjectivePoint> = parties.iter().map(|p| p.get_host_key()).collect();
 
         let coordinator = CoordinatorInitialState::new(host_keys.clone(), T).unwrap();
-
-        let parties: Vec<ParticipantParamsState> = parties
-            .into_iter()
-            .map(|p| p.next((host_keys.clone(), T)).unwrap().0.unwrap())
-            .collect();
 
         // --------------- DKG PHASE ---------------
 
@@ -47,7 +41,7 @@ mod tests {
         let parties: Vec<ParticipantStep1State> = parties
             .into_iter()
             .map(|p| {
-                let (next, msg) = p.next([0u8; 32]).unwrap();
+                let (next, msg) = p.next((host_keys.clone(), T, [0u8; 32])).unwrap();
                 msg1.push(msg);
                 next.unwrap()
             })

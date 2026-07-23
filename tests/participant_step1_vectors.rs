@@ -8,7 +8,6 @@ use anyhow::{Context, Result, ensure};
 use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::ParticipantMsg1;
 use chilldkg::party::{ParticipantInitialState, ParticipantState, ParticipantStep1State};
-use k256::ProjectivePoint;
 use serde::Deserialize;
 
 pub mod common;
@@ -90,16 +89,8 @@ fn run_participant_step1(
 ) -> Result<(ParticipantStep1State, ParticipantMsg1)> {
     let s = parse_scalar_hex(hostseckey_hex)?;
     let host_pubkeys = parse_host_pubkeys(&params)?;
-    let host_pubkey = ProjectivePoint::GENERATOR * s;
-    let idx = host_pubkeys
-        .iter()
-        .position(|P_i| *P_i == host_pubkey)
-        .unwrap_or(0);
-    let initial = ParticipantInitialState { idx, s };
-    let (next, ()) = initial.next((host_pubkeys, params.t))?;
-    let (next, msg) = next
-        .context("missing participant params state")?
-        .next(parse_hex_array(random_hex)?)?;
+    let initial = ParticipantInitialState { s };
+    let (next, msg) = initial.next((host_pubkeys, params.t, parse_hex_array(random_hex)?))?;
 
     Ok((next.context("missing participant step1 state")?, msg))
 }

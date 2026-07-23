@@ -13,8 +13,8 @@ use crate::errors::ChillDkgError;
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
 use crate::party::{
-    DKGOutput, ParticipantInitialState, ParticipantParamsState, ParticipantState,
-    ParticipantStep1State, ParticipantStep2State,
+    DKGOutput, ParticipantInitialState, ParticipantState, ParticipantStep1State,
+    ParticipantStep2State,
 };
 use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
@@ -43,41 +43,25 @@ fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 
 }
 
 impl ParticipantState for ParticipantInitialState {
-    type Message = (Vec<ProjectivePoint>, usize);
-    type Next = ParticipantParamsState;
-    type Output = ();
-
-    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        let (host_pubkeys, t) = msg;
-        let next_stage = ParticipantParamsState {
-            idx: self.idx,
-            s: self.s,
-            host_pubkeys,
-            t,
-        };
-
-        next_stage.validate_session_params()?;
-
-        Ok((Some(next_stage), ()))
-    }
-}
-
-impl ParticipantState for ParticipantParamsState {
-    type Message = [u8; 32];
+    type Message = (Vec<ProjectivePoint>, usize, [u8; 32]);
     type Next = ParticipantStep1State;
     type Output = ParticipantMsg1;
 
-    fn next(self, random: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        let enc_context = serialize_enc_context(self.t, &self.host_pubkeys);
+    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+        let (host_pubkeys, t, random) = msg;
+
+        let idx = self.validate_session_params(&host_pubkeys, t)?;
+
+        let enc_context = serialize_enc_context(t, &host_pubkeys);
         let simpl_seed = derive_simpl_seed(&self.s, &random, &enc_context);
 
         let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
 
         ensure!(r != Scalar::ZERO, "EncPedPop secret nonce must not be zero");
 
-        let polynomial = Polynomial::new(&simpl_seed, self.t)?;
+        let polynomial = Polynomial::new(&simpl_seed, t)?;
 
-        let shares: Vec<Scalar> = polynomial.eval_shares(self.host_pubkeys.len() as u64);
+        let shares: Vec<Scalar> = polynomial.eval_shares(host_pubkeys.len() as u64);
 
         let commitment: Vec<ProjectivePoint> = polynomial.commit();
 
@@ -87,20 +71,13 @@ impl ParticipantState for ParticipantParamsState {
                 .context("Free term must exist")?
                 .to_owned(),
             simpl_seed,
-            self.idx as u32,
+            idx as u32,
         )
         .sign()?;
 
         let pubnonce = ProjectivePoint::GENERATOR * r;
 
-        let enc_shares = encrypt(
-            &r,
-            &self.s,
-            &self.host_pubkeys,
-            &enc_context,
-            self.idx,
-            &shares,
-        )?;
+        let enc_shares = encrypt(&r, &self.s, &host_pubkeys, &enc_context, idx, &shares)?;
 
         let com_to_secret = commitment[0];
 
@@ -112,10 +89,10 @@ impl ParticipantState for ParticipantParamsState {
         };
 
         let next_stage = ParticipantStep1State {
-            idx: self.idx,
+            idx,
             s: self.s,
-            host_pubkeys: self.host_pubkeys,
-            t: self.t,
+            host_pubkeys,
+            t,
             pubnonce,
             com_to_secret,
         };
@@ -248,7 +225,7 @@ impl ParticipantState for ParticipantStep2State {
             {
                 return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
                     participant: i,
-                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err)
+                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err),
                 }.into());
             }
         }

@@ -45,7 +45,8 @@ High-level flow:
 1. Each participant creates `ParticipantInitialState`.
 2. The coordinator creates `CoordinatorInitialState` from all host public keys
    and threshold `t`.
-3. Participants accept the session parameters and produce `ParticipantMsg1`.
+3. Participants accept the coordinator-provided session parameters plus local
+   randomness and produce `ParticipantMsg1`.
 4. The coordinator aggregates all `ParticipantMsg1` values into `CoordinatorMsg1`.
 5. Participants process `CoordinatorMsg1` and produce `ParticipantMsg2`.
 6. The coordinator verifies all `ParticipantMsg2` values and produces
@@ -56,11 +57,9 @@ High-level flow:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ParticipantInitialState: new(idx, rng)
-    ParticipantInitialState --> ParticipantParamsState: next((host_pubkeys, t))
+    [*] --> ParticipantInitialState: new(rng)
+    ParticipantInitialState --> ParticipantStep1State: next((host_pubkeys, t, random))
     ParticipantInitialState --> Failed: .next() call failed
-    ParticipantParamsState --> ParticipantStep1State: next(random)
-    ParticipantParamsState --> Failed: .next() call failed
     ParticipantStep1State --> ParticipantStep2State: next((CoordinatorMsg1, aux_rand))
     ParticipantStep1State --> Failed: .next() call failed
     ParticipantStep2State --> Success: next(CoordinatorMsg2)
@@ -74,7 +73,7 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> CoordinatorInitialState: new(host_pubkeys, t)
-    CoordinatorInitialState --> CoordinatorStep1State: next([ParticipantMsg2])
+    CoordinatorInitialState --> CoordinatorStep1State: next([ParticipantMsg1])
     CoordinatorInitialState --> Failed: .next() call failed
     CoordinatorStep1State --> Success: next([ParticipantMsg2])
     CoordinatorStep1State --> Failed: .next() call failed
@@ -91,8 +90,7 @@ an error instead of advancing to the next state.
 use chilldkg::coordinator::{CoordinatorInitialState, CoordinatorState};
 use chilldkg::msg::{ParticipantMsg1, ParticipantMsg2};
 use chilldkg::party::{
-    ParticipantInitialState, ParticipantParamsState, ParticipantState, ParticipantStep1State,
-    ParticipantStep2State,
+    ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
 };
 use k256::ProjectivePoint;
 use rand_core::OsRng;
@@ -107,7 +105,7 @@ fn main() -> anyhow::Result<()> {
     // 1. Prepare params 
     
     let participants: Vec<_> = (0..N)
-        .map(|idx| ParticipantInitialState::new(idx, &mut rng))
+        .map(|_| ParticipantInitialState::new(&mut rng))
         .collect();
     
     // TODO: Securely save `participants[i].s`
@@ -116,11 +114,6 @@ fn main() -> anyhow::Result<()> {
         participants.iter().map(|p| p.get_host_key()).collect();
 
     let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
-
-    let participants: Vec<ParticipantParamsState> = participants
-        .into_iter()
-        .map(|p| p.next((host_pubkeys.clone(), T)).map(|(next, _)| next.unwrap()))
-        .collect::<anyhow::Result<_>>()?;
     
     // 2. Execute step #1
 
@@ -129,7 +122,7 @@ fn main() -> anyhow::Result<()> {
         .into_iter()
         .map(|p| {
             let random = [0u8; 32]; // TODO: generate good randomness 
-            let (next, msg) = p.next(random)?;
+            let (next, msg) = p.next((host_pubkeys.clone(), T, random))?;
             pmsg1s.push(msg);
             Ok(next.unwrap())
         })
