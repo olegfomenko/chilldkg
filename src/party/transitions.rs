@@ -20,7 +20,7 @@ use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
-fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
+pub(crate) fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
     let mut enc_context = Vec::with_capacity(4 + 33 * host_pubkeys.len());
     enc_context.extend_from_slice(&(t as u32).to_be_bytes());
 
@@ -31,7 +31,7 @@ fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> 
     enc_context
 }
 
-fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 32] {
+pub(crate) fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 32] {
     let seed: [u8; 32] = s.to_bytes().into();
 
     let mut preimage = Vec::with_capacity(32 + 32 + enc_context.len());

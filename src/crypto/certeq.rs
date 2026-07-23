@@ -1,12 +1,15 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::ec::{BIP340XOnlyPubKey, compress_default, compress_scalar_bip340};
+use crate::crypto::ec::{
+    BIP340XOnlyPubKey, CompressedPubKey, compress_default, compress_scalar_bip340,
+    decompress_default,
+};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::{
     TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
 };
-use anyhow::{Result, ensure};
+use crate::crypto::{scalar_from_bytes, tagged_hash};
+use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
 
@@ -43,6 +46,58 @@ pub fn get_certeq_transcript(
     }
 
     eq_input
+}
+
+pub fn parse_certeq_transcript(
+    transcript: &Vec<u8>,
+    n: usize,
+) -> Result<(
+    usize,
+    Vec<ProjectivePoint>,
+    Vec<ProjectivePoint>,
+    Vec<ProjectivePoint>,
+    Vec<Scalar>,
+)> {
+    ensure!(transcript.len() >= 4, "invalid CertEq transcript length");
+
+    let t = u32::from_be_bytes(transcript[..4].try_into()?) as usize;
+    ensure!(
+        transcript.len() == 4 + 33 * t + (33 + 33 + 32) * n,
+        "invalid CertEq transcript length"
+    );
+
+    let mut offset = 4;
+
+    let mut sum_commitment: Vec<ProjectivePoint> = Vec::with_capacity(t);
+    let mut host_pubkeys: Vec<ProjectivePoint> = Vec::with_capacity(n);
+    let mut pubnonces: Vec<ProjectivePoint> = Vec::with_capacity(n);
+    let mut enc_secshares: Vec<Scalar> = Vec::with_capacity(n);
+
+    for _ in 0..t {
+        let compressed: &CompressedPubKey = (&transcript[offset..offset + 33]).try_into()?;
+        offset += 33;
+        sum_commitment.push(decompress_default(compressed).context("invalid commitment point")?);
+    }
+
+    for _ in 0..n {
+        let compressed: &CompressedPubKey = (&transcript[offset..offset + 33]).try_into()?;
+        offset += 33;
+        host_pubkeys.push(decompress_default(compressed).context("invalid host pubkey point")?);
+    }
+
+    for _ in 0..n {
+        let compressed: &CompressedPubKey = (&transcript[offset..offset + 33]).try_into()?;
+        offset += 33;
+        pubnonces.push(decompress_default(compressed).context("invalid public nonce point")?);
+    }
+
+    for _ in 0..n {
+        let bytes: [u8; 32] = (&transcript[offset..offset + 32]).try_into()?;
+        offset += 32;
+        enc_secshares.push(scalar_from_bytes(bytes).context("invalid enc share scalar")?);
+    }
+
+    Ok((t, sum_commitment, host_pubkeys, pubnonces, enc_secshares))
 }
 
 pub struct CertEQSigner {
