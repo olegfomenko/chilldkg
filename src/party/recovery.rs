@@ -1,10 +1,9 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{CertEQVerifier, parse_certeq_transcript};
+use crate::crypto::certeq::{parse_certeq_transcript, verify_certeq_certificate};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::decrypt;
-use crate::crypto::schnorr::SchnorrVerifier;
 use crate::errors::ChillDkgError;
 use crate::msg::RecoveryData;
 use crate::party::transitions::serialize_enc_context;
@@ -17,23 +16,35 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
     let n = recovery_data.cert.len();
 
     let (t, sum_commitment, host_pubkeys, pubnonces, enc_secshares) =
-        parse_certeq_transcript(&recovery_data.transcript, n).map_err(|_| {
-            ChillDkgError::RecoveryDataError("Failed to deserialize recovery data".to_owned())
+        parse_certeq_transcript(&recovery_data.transcript, n).map_err(|err| {
+            ChillDkgError::RecoveryDataError(match <&ChillDkgError>::try_from(&err) {
+                Ok(ChillDkgError::InvalidHostPubkeyError { .. }) => {
+                    "Invalid session parameters in recovery data".to_owned()
+                }
+                _ => "Failed to deserialize recovery data".to_owned(),
+            })
         })?;
 
-    let initial_state = ParticipantInitialState { s };
-    let idx = initial_state.validate_session_params(&host_pubkeys, t)?;
+    let idx = ParticipantInitialState { s }
+        .validate_session_params(&host_pubkeys, t)
+        .map_err(|err| match <&ChillDkgError>::try_from(&err) {
+            Ok(ChillDkgError::HostSeckeyError { .. }) => ChillDkgError::HostSeckeyError(
+                "Host secret key does not match any host public key in the recovery data"
+                    .to_owned(),
+            ),
+            _ => ChillDkgError::RecoveryDataError(
+                "Invalid session parameters in recovery data".to_owned(),
+            ),
+        })?;
 
-    for i in 0..host_pubkeys.len() {
-        if let Err(err) = CertEQVerifier::new(host_pubkeys[i], &recovery_data.transcript, i)
-            .verify(recovery_data.cert[i])
-        {
-            return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
-                participant: i,
-                message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err),
-            }.into());
-        }
-    }
+    verify_certeq_certificate(
+        &host_pubkeys,
+        &recovery_data.transcript,
+        &recovery_data.cert,
+    )
+    .map_err(|_| {
+        ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned())
+    })?;
 
     let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0])?;
 

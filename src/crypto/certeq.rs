@@ -1,14 +1,17 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, CompressedPubKey, compress_default, compress_scalar_bip340,
     decompress_default,
 };
+use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{
     TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
 };
 use crate::crypto::{scalar_from_bytes, tagged_hash};
+use crate::errors::ChillDkgError;
 use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
@@ -49,7 +52,7 @@ pub fn get_certeq_transcript(
 }
 
 pub fn parse_certeq_transcript(
-    transcript: &Vec<u8>,
+    transcript: &[u8],
     n: usize,
 ) -> Result<(
     usize,
@@ -79,10 +82,13 @@ pub fn parse_certeq_transcript(
         sum_commitment.push(decompress_default(compressed).context("invalid commitment point")?);
     }
 
-    for _ in 0..n {
+    for i in 0..n {
         let compressed: &CompressedPubKey = (&transcript[offset..offset + 33]).try_into()?;
         offset += 33;
-        host_pubkeys.push(decompress_default(compressed).context("invalid host pubkey point")?);
+        host_pubkeys.push(
+            decompress_default(compressed)
+                .ok_or(ChillDkgError::InvalidHostPubkeyError { participant: i })?,
+        );
     }
 
     for _ in 0..n {
@@ -98,6 +104,33 @@ pub fn parse_certeq_transcript(
     }
 
     Ok((t, sum_commitment, host_pubkeys, pubnonces, enc_secshares))
+}
+
+pub fn verify_certeq_certificate(
+    host_pubkeys: &[ProjectivePoint],
+    transcript: &[u8],
+    cert: &[SchnorrSignature],
+) -> Result<()> {
+    chill_dkg_ensure!(
+        cert.len() == host_pubkeys.len(),
+        ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned(),),
+    );
+
+    for i in 0..host_pubkeys.len() {
+        if let Err(err) = CertEQVerifier::new(host_pubkeys[i], transcript, i).verify(cert[i]) {
+            return Err(
+                ChillDkgError::FaultyParticipantOrCoordinatorError {
+                    participant: i,
+                    message: format!(
+                        "Participant has provided an invalid signature for the certificate, error = {:?}",
+                        err
+                    ),
+                }
+                .into());
+        }
+    }
+
+    Ok(())
 }
 
 pub struct CertEQSigner {

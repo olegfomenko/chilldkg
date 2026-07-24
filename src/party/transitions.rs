@@ -1,7 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{CertEQSigner, CertEQVerifier, get_certeq_transcript};
+use crate::crypto::certeq::{CertEQSigner, get_certeq_transcript, verify_certeq_certificate};
 use crate::crypto::ec::{compress_default, eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::poly::Polynomial;
@@ -214,21 +214,7 @@ impl ParticipantState for ParticipantStep2State {
     type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        chill_dkg_ensure!(
-            msg.cert.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned(),),
-        );
-
-        for i in 0..self.host_pubkeys.len() {
-            if let Err(err) =
-                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
-            {
-                return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
-                    participant: i,
-                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err),
-                }.into());
-            }
-        }
+        verify_certeq_certificate(&self.host_pubkeys, &self.transcript, &msg.cert)?;
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,
