@@ -21,7 +21,7 @@ building blocks used by the protocol.
 
 - [x] The main participant and coordinator DKG flows.
 - [x] Tests with reference test vectors (`tests/vectors`).
-- [ ] Recovery using transcript and secret host key.
+- [x] Participant recovery using transcript and secret host key.
 - [ ] Malicious behavior investigation.
 - [ ] Messages serialization.
 - [ ] Implementation audit.
@@ -32,7 +32,6 @@ building blocks used by the protocol.
 - `src/coordinator`: coordinator state machine.
 - `src/msg.rs`: typed protocol messages and recovery data.
 - `src/errors.rs`: ChillDKG-style error names.
-- `src/math`: scalar polynomial helpers.
 - `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, and CertEq helpers.
 - `tests`: unit tests and reference-vector integration tests.
 
@@ -101,20 +100,20 @@ fn main() -> anyhow::Result<()> {
 
     let mut rng = OsRng;
 
-    
+
     // 1. Prepare params 
-    
+
     let participants: Vec<_> = (0..N)
         .map(|_| ParticipantInitialState::new(&mut rng))
         .collect();
-    
+
     // TODO: Securely save `participants[i].s`
 
     let host_pubkeys: Vec<ProjectivePoint> =
         participants.iter().map(|p| p.get_host_key()).collect();
 
     let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
-    
+
     // 2. Execute step #1
 
     let mut pmsg1s: Vec<ParticipantMsg1> = Vec::with_capacity(N);
@@ -130,7 +129,7 @@ fn main() -> anyhow::Result<()> {
 
     let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
     let coordinator = coordinator.unwrap();
-    
+
     // 3. Execute step #2
 
     let mut pmsg2s: Vec<ParticipantMsg2> = Vec::with_capacity(N);
@@ -149,14 +148,14 @@ fn main() -> anyhow::Result<()> {
     let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s)?;
 
     // 4. Execute final check
-    
+
     for participant in participants {
         // Obtain DKG result from each participant.
         let (_, (participant_output, participant_recovery_data)) =
             participant.next(cmsg2.clone())?;
-        
+
         // TODO: Securely save `participant_output.secshare`
-        
+
         // Public data should be the same across all participants and coordinator.
         assert_eq!(
             participant_output.threshold_pubkey,
@@ -188,15 +187,54 @@ The current integration vector suites include:
 - `participant_finalize_vectors`
 - `coordinator_step1_vectors`
 - `coordinator_finalize_vectors`
+- `recover_vectors`
 
 The vector files live in `tests/vectors` and are derived from the Python
-reference implementation. Some reference tests that validate raw byte decoding
-are intentionally not represented yet because this crate currently exposes typed
-Rust messages rather than byte-level parsing APIs.
+reference implementation. The test harness decodes reference hex strings into
+typed Rust values and then exercises this crate's state transitions. The vector
+case ids keep the reference numbering, so gaps indicate reference cases that are
+not represented by the typed Rust API.
+
+Current vector coverage:
+
+- `participant_step1_vectors`: reference cases `1, 3, 5, 6`.
+- `participant_step2_vectors`: reference cases `1, 3, 4, 5, 6, 7`.
+- `participant_finalize_vectors`: reference cases `1, 2, 3`.
+- `coordinator_step1_vectors`: reference cases `1, 2, 4, 5`.
+- `coordinator_finalize_vectors`: reference cases `1, 2, 3`.
+- `recover_vectors`: reference cases `1, 2, 3, 4, 5, 6, 7, 8, 9, 11`.
+
+## Differences From The Reference Implementation
+
+This crate follows the protocol logic of the Python reference implementation in
+the core successful participant and coordinator DKG flow: VSS coefficient
+derivation, EncPedPop encryption pads, PoP verification, CertEq signatures,
+Taproot tweaking, public share calculation, and final certificate verification
+are intended to match the reference and are checked with reference vectors.
+
+The remaining differences are API, serialization, recovery, and fault-handling
+differences:
+
+- The reference public API is byte-oriented, while ours is currently datastructs-oriented.
+- The reference messages serialize some group elements with an explicit
+  point-at-infinity encoding. This crate currently avoids custom serializers and
+  mostly works with typed points plus ordinary compressed SEC1 encoding.
+- The reference includes optional malicious-behavior investigation
+  (`participant_investigate` and `coordinator_investigate`) for invalid encrypted
+  shares. This crate raises the corresponding unknown-fault error during
+  participant step 2, but does not carry the investigation data or implement the
+  investigation protocol.
+- Recovery is split into participant and coordinator APIs in this crate.
+- Reference-vector files are adapted only where needed to reach the typed Rust
+  API.
+- Recovery validation order is not identical. This affects error classification
+  for malformed recovery data but not the DKG output accepted on a successful
+  recovery.
+- Recovery transcript parsing is stricter for public nonces. This may change
+  which error is returned for malformed recovery bytes.
 
 ## Development Notes
 
 - Uppercase local variable names such as `P_i` and `C_k` denote curve points.
 - Lowercase scalar names such as `s`, `r`, and `tweak` denote scalars or ordinary values.
 - The implementation deliberately avoids custom serializers for `k256` types for now.
-- Keep reference-vector tests focused on behavior that can reach the typed Rust API.
