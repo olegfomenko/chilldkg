@@ -92,12 +92,15 @@ mod tests {
                 p_output.threshold_pubkey.to_encoded_point(true).to_string()
             );
             println!("\t\tSecret share {:x}", p_output.secshare.to_bytes());
-            
+
             let p_output_recovered = ParticipantInitialState { s: host_seckeys[i] }
                 .recover(&recovery_data)
                 .unwrap();
 
-            println!("\t\tRecovered secret share {:x}", p_output_recovered.secshare.to_bytes());
+            println!(
+                "\t\tRecovered secret share {:x}",
+                p_output_recovered.secshare.to_bytes()
+            );
             println!("\n");
         }
     }
