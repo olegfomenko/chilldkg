@@ -2,12 +2,14 @@
 
 use crate::chill_dkg_ensure;
 use crate::errors::ChillDkgError;
-use crate::msg::CoordinatorMsg1;
+use crate::msg::{CoordinatorMsg1, RecoveryData};
+use crate::party::recovery::recover;
 use anyhow::Result;
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
 
+pub mod recovery;
 pub mod transitions;
 
 pub trait ParticipantState: Sized {
@@ -35,6 +37,11 @@ impl ParticipantInitialState {
 
     pub fn get_host_key(&self) -> ProjectivePoint {
         ProjectivePoint::GENERATOR * self.s
+    }
+
+    /// Recover this participant's DKG output from successful-session recovery data.
+    pub fn recover(&self, recovery_data: &RecoveryData) -> Result<DKGOutput> {
+        recover(self.s, recovery_data)
     }
 }
 

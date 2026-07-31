@@ -7,6 +7,7 @@ use anyhow::Result;
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
+pub mod recovery;
 pub mod transitions;
 pub trait CoordinatorState: Sized {
     type Message;
@@ -113,7 +114,7 @@ impl CoordinatorInitialState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoordinatorDkgOutput {
+pub struct CoordinatorDKGOutput {
     /// DKG threshold.
     ///
     /// Math: `t`.
@@ -148,5 +149,5 @@ pub struct CoordinatorStep1State {
     pub transcript: Vec<u8>,
 
     /// Coordinator's DKG output.
-    pub dkg_output: CoordinatorDkgOutput,
+    pub dkg_output: CoordinatorDKGOutput,
 }

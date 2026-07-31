@@ -1,7 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use anyhow::{Context, Result, ensure};
-use chilldkg::coordinator::{CoordinatorDkgOutput, CoordinatorInitialState, CoordinatorState};
+use chilldkg::coordinator::{CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState};
 use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::{CoordinatorMsg2, RecoveryData};
 use serde::Deserialize;
@@ -101,7 +101,7 @@ fn load_vectors() -> Result<VectorFile> {
 fn run_coordinator_finalize(
     vectors: &VectorFile,
     pmsg2_indices: &[usize],
-) -> Result<(CoordinatorMsg2, CoordinatorDkgOutput, RecoveryData)> {
+) -> Result<(CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData)> {
     let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
     let initial = CoordinatorInitialState::new(host_pubkeys, vectors.params.t)?;
     let n = initial.host_pubkeys.len();
@@ -131,7 +131,7 @@ fn run_coordinator_finalize(
 
 fn assert_expected_output(
     cmsg2: &CoordinatorMsg2,
-    dkg_output: &CoordinatorDkgOutput,
+    dkg_output: &CoordinatorDKGOutput,
     recovery_data: &RecoveryData,
     expected: &ExpectedOutput,
     params: &Params,

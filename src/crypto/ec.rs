@@ -8,8 +8,12 @@ use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 
-pub type BIP340XOnlyPubKey = [u8; 32];
-pub type CompressedPubKey = [u8; 33];
+pub const X_ONLY_POINT_BYTES_SIZE: usize = 32;
+pub const COMPRESSED_POINT_BYTES_SIZE: usize = 33;
+/// Scalar field size in bytes (F_r)
+pub const EC_SCALAR_BYTES_SIZE: usize = 32;
+pub type BIP340XOnlyPubKey = [u8; X_ONLY_POINT_BYTES_SIZE];
+pub type CompressedPubKey = [u8; COMPRESSED_POINT_BYTES_SIZE];
 
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     ensure!(
@@ -60,8 +64,7 @@ pub fn decompress_default(bytes: &CompressedPubKey) -> Option<ProjectivePoint> {
 /// Default secp256k1 point compression. Outputs 33-byte compressed point.
 pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
     let encoded = point.to_affine().to_encoded_point(true);
-
-    let mut out = [0u8; 33];
+    let mut out = [0u8; COMPRESSED_POINT_BYTES_SIZE];
     out.copy_from_slice(encoded.as_bytes());
     out
 }

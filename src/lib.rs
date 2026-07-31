@@ -11,8 +11,8 @@ mod tests {
     use crate::party::{
         ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
     };
-    use k256::ProjectivePoint;
     use k256::elliptic_curve::sec1::ToEncodedPoint;
+    use k256::{ProjectivePoint, Scalar};
     use rand_core::OsRng;
 
     #[test]
@@ -27,6 +27,8 @@ mod tests {
         let parties: Vec<ParticipantInitialState> = (0..N)
             .map(|_| ParticipantInitialState::new(&mut rng))
             .collect();
+
+        let host_seckeys: Vec<Scalar> = parties.iter().map(|p| p.s).collect();
 
         let host_keys: Vec<ProjectivePoint> = parties.iter().map(|p| p.get_host_key()).collect();
 
@@ -74,8 +76,8 @@ mod tests {
 
         // ---- CertEq ----
 
-        for p in parties {
-            let (_, (p_output, _)) = p.next(msg2_resp.clone()).unwrap();
+        for (i, p) in parties.into_iter().enumerate() {
+            let (_, (p_output, recovery_data)) = p.next(msg2_resp.clone()).unwrap();
             assert_eq!(
                 p_output.threshold_pubkey, output.threshold_pubkey,
                 "Invalid group key for party {}",
@@ -90,6 +92,15 @@ mod tests {
                 p_output.threshold_pubkey.to_encoded_point(true).to_string()
             );
             println!("\t\tSecret share {:x}", p_output.secshare.to_bytes());
+
+            let p_output_recovered = ParticipantInitialState { s: host_seckeys[i] }
+                .recover(&recovery_data)
+                .unwrap();
+
+            println!(
+                "\t\tRecovered secret share {:x}",
+                p_output_recovered.secshare.to_bytes()
+            );
             println!("\n");
         }
     }

@@ -1,8 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{CertEQSigner, CertEQVerifier, get_certeq_transcript};
-use crate::crypto::ec::{compress_default, eval_pub_share, tap_tweak_no_script};
+use crate::crypto::certeq::{CertEQSigner, get_certeq_transcript, verify_certeq_certificate};
+use crate::crypto::ec::{
+    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default, eval_pub_share,
+    tap_tweak_no_script,
+};
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::poly::Polynomial;
 use crate::crypto::pop::{PopSigner, PopVerifier};
@@ -20,8 +23,8 @@ use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
-fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
-    let mut enc_context = Vec::with_capacity(4 + 33 * host_pubkeys.len());
+pub(crate) fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
+    let mut enc_context = Vec::with_capacity(4 + COMPRESSED_POINT_BYTES_SIZE * host_pubkeys.len());
     enc_context.extend_from_slice(&(t as u32).to_be_bytes());
 
     for P_i in host_pubkeys {
@@ -31,10 +34,10 @@ fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> 
     enc_context
 }
 
-fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 32] {
-    let seed: [u8; 32] = s.to_bytes().into();
+pub(crate) fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 32] {
+    let seed: [u8; EC_SCALAR_BYTES_SIZE] = s.to_bytes().into();
 
-    let mut preimage = Vec::with_capacity(32 + 32 + enc_context.len());
+    let mut preimage = Vec::with_capacity(EC_SCALAR_BYTES_SIZE + random.len() + enc_context.len());
     preimage.extend_from_slice(&seed);
     preimage.extend_from_slice(random);
     preimage.extend_from_slice(enc_context);
@@ -214,21 +217,7 @@ impl ParticipantState for ParticipantStep2State {
     type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        chill_dkg_ensure!(
-            msg.cert.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned(),),
-        );
-
-        for i in 0..self.host_pubkeys.len() {
-            if let Err(err) =
-                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
-            {
-                return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
-                    participant: i,
-                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err),
-                }.into());
-            }
-        }
+        verify_certeq_certificate(&self.host_pubkeys, &self.transcript, &msg.cert)?;
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,

@@ -1,6 +1,8 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::ec::{BIP340XOnlyPubKey, compress_scalar_bip340};
+use crate::crypto::ec::{
+    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_scalar_bip340,
+};
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tagged_hash;
@@ -62,12 +64,13 @@ impl SchnorrSigner for PopSigner {
         let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed);
         let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
         let (p_x, d) = self.x_only_key();
-        let mut t: [u8; 32] = d.to_bytes().into();
-        for i in 0..32 {
+        let mut t: [u8; EC_SCALAR_BYTES_SIZE] = d.to_bytes().into();
+        for i in 0..EC_SCALAR_BYTES_SIZE {
             t[i] ^= aux_hash[i];
         }
 
-        let mut nonce_preimage = Vec::with_capacity(32 + 32 + 4);
+        let mut nonce_preimage =
+            Vec::with_capacity(EC_SCALAR_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 4);
         nonce_preimage.extend_from_slice(&t);
         nonce_preimage.extend_from_slice(&p_x);
         nonce_preimage.extend_from_slice(self.message());
@@ -129,7 +132,7 @@ fn get_pop_challenge(
     P: &BIP340XOnlyPubKey,
     message: &[u8],
 ) -> Result<Scalar> {
-    let mut challenge_preimage = Vec::with_capacity(32 + 32 + 4);
+    let mut challenge_preimage = Vec::with_capacity(X_ONLY_POINT_BYTES_SIZE * 2 + 4);
     challenge_preimage.extend_from_slice(R);
     challenge_preimage.extend_from_slice(P);
     challenge_preimage.extend_from_slice(message);

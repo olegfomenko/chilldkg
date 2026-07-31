@@ -2,7 +2,7 @@
 
 use crate::chill_dkg_ensure;
 use crate::coordinator::{
-    CoordinatorDkgOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
+    CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
 use crate::crypto::certeq::{CertEQVerifier, get_certeq_transcript};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
@@ -62,7 +62,7 @@ impl CoordinatorState for CoordinatorInitialState {
             &coordinator_msg.enc_secshares,
         );
 
-        let dkg_output = CoordinatorDkgOutput {
+        let dkg_output = CoordinatorDKGOutput {
             t: self.t,
             threshold_pubkey,
             pubshares,
@@ -82,7 +82,7 @@ impl CoordinatorState for CoordinatorInitialState {
 impl CoordinatorState for CoordinatorStep1State {
     type Message = Vec<ParticipantMsg2>;
     type Next = Self;
-    type Output = (CoordinatorMsg2, CoordinatorDkgOutput, RecoveryData);
+    type Output = (CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData);
 
     fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         chill_dkg_ensure!(
