@@ -1,6 +1,6 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::crypto::ec::compress_default;
+use crate::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
 use anyhow::{Result, ensure};
@@ -18,7 +18,8 @@ use sha2::{Digest, Sha256};
 ///     ) mod n
 pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(P_j * r_i)));
-    let mut data = Vec::with_capacity(32 + 33 + 33 + context.len());
+    let mut data =
+        Vec::with_capacity(Sha256::output_size() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len());
     data.extend_from_slice(&ecdh_bytes);
     data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
     data.extend_from_slice(&compress_default(P_j));
@@ -36,7 +37,8 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sca
 ///     ) mod n
 pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(R_j * s_i)));
-    let mut data = Vec::with_capacity(32 + 33 + 33 + context.len());
+    let mut data =
+        Vec::with_capacity(Sha256::output_size() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len());
     data.extend_from_slice(&ecdh_bytes);
     data.extend_from_slice(&compress_default(R_j));
     data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * s_i)));
@@ -54,9 +56,10 @@ pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> 
 ///         S_i || R_i || ctx_i
 ///     ) mod n
 pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> Scalar {
-    let seckey_bytes: [u8; 32] = s_i.to_bytes().into();
+    let seckey_bytes: [u8; EC_SCALAR_BYTES_SIZE] = s_i.to_bytes().into();
 
-    let mut data = Vec::with_capacity(32 + 33 + context.len());
+    let mut data =
+        Vec::with_capacity(EC_SCALAR_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + context.len());
     data.extend_from_slice(&seckey_bytes);
     data.extend_from_slice(&compress_default(R_i));
     data.extend_from_slice(context);

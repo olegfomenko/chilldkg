@@ -1,7 +1,8 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::crypto::ec::{
-    BIP340XOnlyPubKey, compress_point_bip340, compress_scalar_bip340, even_y_point,
+    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_point_bip340,
+    compress_scalar_bip340, even_y_point,
 };
 use crate::crypto::scalar_from_bytes;
 use anyhow::{Context, Result, bail, ensure};
@@ -9,7 +10,9 @@ use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::{ProjectivePoint, Scalar};
 
-pub type SchnorrSignature = [u8; 64];
+// 64
+pub const SCHNORR_SIG_BYTES_SIZE: usize = X_ONLY_POINT_BYTES_SIZE + EC_SCALAR_BYTES_SIZE;
+pub type SchnorrSignature = [u8; SCHNORR_SIG_BYTES_SIZE];
 
 pub trait SchnorrSigner {
     fn message(&self) -> &[u8];
@@ -28,10 +31,10 @@ pub trait SchnorrSigner {
         let (P_x, d) = self.x_only_key();
         let (R_x, k) = self.x_only_nonce()?;
         let e = self.challenge(&R_x, &P_x)?;
-        let s: [u8; 32] = (k + e * d).to_bytes().into();
-        let mut sig = [0u8; 64];
-        sig[..32].copy_from_slice(&R_x);
-        sig[32..].copy_from_slice(&s);
+        let s: [u8; EC_SCALAR_BYTES_SIZE] = (k + e * d).to_bytes().into();
+        let mut sig = [0u8; SCHNORR_SIG_BYTES_SIZE];
+        sig[..X_ONLY_POINT_BYTES_SIZE].copy_from_slice(&R_x);
+        sig[X_ONLY_POINT_BYTES_SIZE..].copy_from_slice(&s);
         Ok(sig)
     }
 }
@@ -54,11 +57,11 @@ pub trait SchnorrVerifier {
             "Schnorr verification failed: public key is identity"
         );
 
-        let mut r_x = [0u8; 32];
-        r_x.copy_from_slice(&sig[..32]);
+        let mut r_x = [0u8; X_ONLY_POINT_BYTES_SIZE];
+        r_x.copy_from_slice(&sig[..X_ONLY_POINT_BYTES_SIZE]);
 
-        let mut s_bytes = [0u8; 32];
-        s_bytes.copy_from_slice(&sig[32..]);
+        let mut s_bytes = [0u8; EC_SCALAR_BYTES_SIZE];
+        s_bytes.copy_from_slice(&sig[X_ONLY_POINT_BYTES_SIZE..]);
 
         let s = scalar_from_bytes(s_bytes)
             .context("Schnorr verification failed: invalid response scalar")?;
@@ -78,7 +81,7 @@ pub trait SchnorrVerifier {
             "Schnorr verification failed: nonce has odd Y"
         );
 
-        let computed_r_x: [u8; 32] = R.x().into();
+        let computed_r_x: [u8; X_ONLY_POINT_BYTES_SIZE] = R.x().into();
         if computed_r_x != r_x {
             bail!("Schnorr verification failed: invalid signature");
         }
