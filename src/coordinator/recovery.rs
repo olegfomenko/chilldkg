@@ -10,14 +10,10 @@ use anyhow::Result;
 /// Recover the coordinator's public DKG output from successful-session recovery data.
 pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
     let transcript = &recovery_data.transcript;
-    let n = transcript.host_pubkeys.len();
 
-    let state = CoordinatorInitialState::new(transcript.host_pubkeys.clone(), transcript.t)
-        .map_err(|_| {
-            ChillDkgError::RecoveryDataError(
-                "Invalid session parameters in recovery data".to_owned(),
-            )
-        })?;
+    CoordinatorInitialState::new(transcript.host_pubkeys.clone(), transcript.t).map_err(|_| {
+        ChillDkgError::RecoveryDataError("Invalid session parameters in recovery data".to_owned())
+    })?;
 
     verify_certeq_certificate(transcript, &recovery_data.cert).map_err(|_| {
         ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned())
@@ -28,9 +24,9 @@ pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
     sum_commitment[0] += pubtweak;
 
     Ok(CoordinatorDKGOutput {
-        t: state.t,
+        t: transcript.t,
         threshold_pubkey: sum_commitment[0],
-        pubshares: (0..n)
+        pubshares: (0..transcript.n())
             .map(|idx| eval_pub_share(&sum_commitment, idx))
             .collect(),
     })

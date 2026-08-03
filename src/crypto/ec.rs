@@ -26,14 +26,14 @@ pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scal
 
 /// Serializes x * G as x-only point and returns normalizes scalar as well.
 pub fn compress_scalar_bip340(x: &Scalar) -> (BIP340XOnlyPubKey, Scalar) {
-    let p = ProjectivePoint::GENERATOR * x;
-    let p_x = compress_point_bip340(&p);
+    let P = ProjectivePoint::GENERATOR * x;
+    let P_x = compress_point_bip340(&P);
 
     // BIP340 key normalization.
-    if bool::from(p.to_affine().y_is_odd()) {
-        (p_x, -x)
+    if bool::from(P.to_affine().y_is_odd()) {
+        (P_x, -x)
     } else {
-        (p_x, *x)
+        (P_x, *x)
     }
 }
 

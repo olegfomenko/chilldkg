@@ -63,7 +63,7 @@ impl SchnorrSigner for PopSigner {
     fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)> {
         let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed);
         let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
-        let (p_x, d) = self.x_only_key();
+        let (P_x, d) = self.x_only_key();
         let mut t: [u8; EC_SCALAR_BYTES_SIZE] = d.to_bytes().into();
         for i in 0..EC_SCALAR_BYTES_SIZE {
             t[i] ^= aux_hash[i];
@@ -72,7 +72,7 @@ impl SchnorrSigner for PopSigner {
         let mut nonce_preimage =
             Vec::with_capacity(EC_SCALAR_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 4);
         nonce_preimage.extend_from_slice(&t);
-        nonce_preimage.extend_from_slice(&p_x);
+        nonce_preimage.extend_from_slice(&P_x);
         nonce_preimage.extend_from_slice(self.message());
 
         let k = Scalar::reduce(U256::from_be_slice(&tagged_hash(

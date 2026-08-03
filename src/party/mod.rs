@@ -31,8 +31,7 @@ pub struct ParticipantInitialState {
 
 impl ParticipantInitialState {
     pub fn new(rng: &mut impl CryptoRngCore) -> Self {
-        let s = *NonZeroScalar::random(rng).as_ref();
-
+        let s: Scalar = *NonZeroScalar::random(rng).as_ref();
         Self { s }
     }
 
