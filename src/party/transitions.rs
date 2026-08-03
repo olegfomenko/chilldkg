@@ -1,7 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{CertEQSigner, get_certeq_transcript, verify_certeq_certificate};
+use crate::crypto::certeq::{CertEQSigner, CertEQTranscript, verify_certeq_certificate};
 use crate::crypto::ec::{
     COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default, eval_pub_share,
     tap_tweak_no_script,
@@ -184,12 +184,12 @@ impl ParticipantState for ParticipantStep1State {
             .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
-        let transcript = get_certeq_transcript(
+        let transcript = CertEQTranscript::new(
             self.t,
-            &sum_commitment,
-            &self.host_pubkeys,
-            &coordinator_msg.pubnonces,
-            &coordinator_msg.enc_secshares,
+            sum_commitment,
+            self.host_pubkeys,
+            coordinator_msg.pubnonces,
+            coordinator_msg.enc_secshares,
         );
 
         let sig = CertEQSigner::new(self.s, &transcript, self.idx, aux).sign()?;
@@ -202,7 +202,6 @@ impl ParticipantState for ParticipantStep1State {
             pubshares,
         };
         let next_stage = ParticipantStep2State {
-            host_pubkeys: self.host_pubkeys,
             transcript,
             dkg_output,
         };
@@ -217,7 +216,7 @@ impl ParticipantState for ParticipantStep2State {
     type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        verify_certeq_certificate(&self.host_pubkeys, &self.transcript, &msg.cert)?;
+        verify_certeq_certificate(&self.transcript, &msg.cert)?;
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,

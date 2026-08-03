@@ -4,7 +4,7 @@ use crate::chill_dkg_ensure;
 use crate::coordinator::{
     CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
-use crate::crypto::certeq::{CertEQVerifier, get_certeq_transcript};
+use crate::crypto::certeq::{CertEQTranscript, CertEQVerifier};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::schnorr::SchnorrVerifier;
 use crate::errors::ChillDkgError;
@@ -54,12 +54,12 @@ impl CoordinatorState for CoordinatorInitialState {
             .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
-        let transcript = get_certeq_transcript(
+        let transcript = CertEQTranscript::new(
             self.t,
-            &sum_commitment,
-            &self.host_pubkeys,
-            &coordinator_msg.pubnonces,
-            &coordinator_msg.enc_secshares,
+            sum_commitment,
+            self.host_pubkeys.clone(),
+            coordinator_msg.pubnonces.clone(),
+            coordinator_msg.enc_secshares.clone(),
         );
 
         let dkg_output = CoordinatorDKGOutput {

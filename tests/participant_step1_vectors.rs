@@ -88,7 +88,7 @@ fn run_participant_step1(
     random_hex: &str,
 ) -> Result<(ParticipantStep1State, ParticipantMsg1)> {
     let s = parse_scalar_hex(hostseckey_hex)?;
-    let host_pubkeys = parse_host_pubkeys(&params)?;
+    let host_pubkeys = parse_host_pubkeys(params)?;
     let initial = ParticipantInitialState { s };
     let (next, msg) = initial.next((host_pubkeys, params.t, parse_hex_array(random_hex)?))?;
 

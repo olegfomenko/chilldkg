@@ -1,6 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
+use crate::crypto::certeq::CertEQTranscript;
 use crate::errors::ChillDkgError;
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::party::recovery::recover;
@@ -108,15 +109,10 @@ pub struct DKGOutput {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantStep2State {
-    /// Ordered participant host public keys.
-    ///
-    /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
-
-    /// Equality-check transcript.
+    /// Equality-check transcript produced by THIS participant.
     ///
     /// Math: `eq_input`.
-    pub transcript: Vec<u8>,
+    pub transcript: CertEQTranscript,
 
     /// Participant's DKG output.
     pub dkg_output: DKGOutput,
@@ -135,9 +131,9 @@ impl ParticipantInitialState {
                 ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
-            for j in (i + 1)..host_pubkeys.len() {
+            for (j, other_pubkey) in host_pubkeys.iter().enumerate().skip(i + 1) {
                 chill_dkg_ensure!(
-                    *pubkey != host_pubkeys[j],
+                    pubkey != other_pubkey,
                     ChillDkgError::DuplicateHostPubkeyError {
                         participant1: i,
                         participant2: j,

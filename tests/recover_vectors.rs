@@ -7,7 +7,9 @@ use crate::common::{
 use anyhow::{Context, Result, ensure};
 use chilldkg::coordinator::CoordinatorDKGOutput;
 use chilldkg::coordinator::recovery::recover as recover_coordinator;
-use chilldkg::crypto::schnorr::SchnorrSignature;
+use chilldkg::crypto::certeq::CertEQTranscript;
+use chilldkg::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
+use chilldkg::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature};
 use chilldkg::errors::ChillDkgError;
 use chilldkg::msg::RecoveryData;
 use chilldkg::party::DKGOutput;
@@ -130,16 +132,31 @@ fn run_coordinator_recover(
 
 fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<RecoveryData> {
     let bytes = hex::decode(hex)?;
-    let transcript_len = 4 + 33 * threshold + (33 + 33 + 32) * n;
+    let transcript_len = 4
+        + COMPRESSED_POINT_BYTES_SIZE * threshold
+        + (COMPRESSED_POINT_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + EC_SCALAR_BYTES_SIZE) * n;
+    let cert_len = SCHNORR_SIG_BYTES_SIZE * n;
+
+    ensure!(
+        bytes.len() == transcript_len + cert_len,
+        ChillDkgError::RecoveryDataError("Failed to deserialize recovery data".to_owned())
+    );
+
+    let transcript = CertEQTranscript::from_bytes(&bytes[..transcript_len], n).map_err(|err| {
+        ChillDkgError::RecoveryDataError(match <&ChillDkgError>::try_from(&err) {
+            Ok(ChillDkgError::InvalidHostPubkeyError { .. }) => {
+                "Invalid session parameters in recovery data".to_owned()
+            }
+            _ => "Failed to deserialize recovery data".to_owned(),
+        })
+    })?;
+
     let cert = bytes[transcript_len..]
-        .chunks_exact(64)
+        .chunks_exact(SCHNORR_SIG_BYTES_SIZE)
         .map(|chunk| Ok(chunk.try_into()?))
         .collect::<Result<Vec<SchnorrSignature>>>()?;
 
-    Ok(RecoveryData {
-        transcript: bytes[..transcript_len].to_vec(),
-        cert,
-    })
+    Ok(RecoveryData { transcript, cert })
 }
 
 fn assert_expected_participant_output(

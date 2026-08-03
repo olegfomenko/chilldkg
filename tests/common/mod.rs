@@ -128,7 +128,7 @@ pub fn serialize_coordinator_msg2(coordinator_msg: &CoordinatorMsg2) -> Vec<u8> 
 }
 
 pub fn serialize_recovery_data(recovery_data: &RecoveryData) -> Vec<u8> {
-    let mut bytes = recovery_data.transcript.clone();
+    let mut bytes = recovery_data.transcript.to_bytes();
     bytes.extend(recovery_data.cert.iter().flatten().copied());
     bytes
 }
