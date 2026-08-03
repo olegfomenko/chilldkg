@@ -10,12 +10,14 @@ use sha2::{Digest, Sha256};
 
 /// ChillDKG ECDH sending pad.
 ///
-/// Puts ecdh_key = SHA256(compressed(r_i * P_j))
-/// Then, puts pad_{i,j} =
-///     H_tag(
-///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || R_i || P_j || context
-///     ) mod n
+/// Puts:
+/// ```text
+/// ecdh_key = SHA256(compressed(r_i * P_j))
+/// pad_{i,j} = H_tag(
+///     "BIP DKG/encpedpop ecdh",
+///     ecdh_key || R_i || P_j || context
+/// ) mod n
+/// ```
 pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(P_j * r_i)));
     let mut data =
@@ -29,12 +31,14 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sca
 
 /// ChillDKG ECDH receiving pad.
 ///
-/// Puts ecdh_key = SHA256(compressed(s_i * R_j))
-/// Then, puts pad_{j,i} =
-///     H_tag(
-///         "BIP DKG/encpedpop ecdh",
-///         ecdh_key || R_j || P_i || context
-///     ) mod n
+/// Puts:
+/// ```text
+/// ecdh_key = SHA256(compressed(s_i * R_j))
+/// pad_{j,i} = H_tag(
+///     "BIP DKG/encpedpop ecdh",
+///     ecdh_key || R_j || P_i || context
+/// ) mod n
+/// ```
 pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> Scalar {
     let ecdh_bytes = Sha256::digest(compress_default(&(R_j * s_i)));
     let mut data =
@@ -50,11 +54,12 @@ pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> 
 ///
 /// Used when sender encrypts to itself, i = j:
 ///
-/// pad_{i,i} =
-///     H_tag(
-///         "BIP DKG/encaps_multi self_pad",
-///         S_i || R_i || ctx_i
-///     ) mod n
+/// ```text
+/// pad_{i,i} = H_tag(
+///     "BIP DKG/encaps_multi self_pad",
+///     S_i || R_i || ctx_i
+/// ) mod n
+/// ```
 pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> Scalar {
     let seckey_bytes: [u8; EC_SCALAR_BYTES_SIZE] = s_i.to_bytes().into();
 
@@ -72,15 +77,17 @@ pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> Scalar {
 
 /// Encrypts this participant's VSS shares for all recipients.
 ///
-/// For each recipient j:
-/// ctx_j = uint32_be(j) || context
+/// ```text
+/// for each recipient j:
+///     ctx_j = uint32_be(j) || context
 ///
-/// if j == idx:
-///     pad_{idx,j} = self_pad(s_idx, R_idx, ctx_j)
-/// else:
-///     pad_{idx,j} = ecdh_send_pad(r_idx, P_j, ctx_j)
+///     if j == idx:
+///         pad_{idx,j} = self_pad(s_idx, R_idx, ctx_j)
+///     else:
+///         pad_{idx,j} = ecdh_send_pad(r_idx, P_j, ctx_j)
 ///
-/// ciphertext_j = share_j + pad_{idx,j}
+///     ciphertext_j = share_j + pad_{idx,j}
+/// ```
 pub fn encrypt(
     r_idx: &Scalar,
     s_idx: &Scalar,
@@ -121,6 +128,7 @@ pub fn encrypt(
 
 /// Encrypts aggregated VSS shares for this participant
 ///
+/// ```text
 /// ctx_idx = uint32_be(idx) || context
 ///
 /// if j == idx:
@@ -129,6 +137,7 @@ pub fn encrypt(
 ///     pad_{j, idx} = ecdh_receive_pad(s_idx, R_j, ctx_idx)
 ///
 /// aggr_shares = aggr_ciphertexts - pads
+/// ```
 pub fn decrypt(
     s_idx: &Scalar,
     R: &[ProjectivePoint],

@@ -13,28 +13,28 @@ use k256::{ProjectivePoint, Scalar, U256};
 
 /// Generates Proof of Possession (a Schnorr signature):
 /// 1. Prepare values:
-/// aux_rand = H("BIP DKG/simplpedpop aux", seed)
+///    aux_rand = H("BIP DKG/simplpedpop aux", seed)
 ///
-/// d = BIP340-normalize(a0)
-/// P_x = xonly(a0 * G)
+///    d = BIP340-normalize(a0)
+///    P_x = xonly(a0 * G)
 ///
-/// t = bytes(d) xor H("BIP DKG/pop message/aux", aux_rand)
+///    t = bytes(d) xor H("BIP DKG/pop message/aux", aux_rand)
 ///
 /// 2. Generate nonce
-/// k0 = H("BIP DKG/pop message/nonce", t || P_x || uint32_be(m)) mod n
-/// k = BIP340-normalize(k0)
+///    k0 = H("BIP DKG/pop message/nonce", t || P_x || uint32_be(m)) mod n
+///    k = BIP340-normalize(k0)
 ///
 /// 3. Put public nonce
-/// R_x = xonly(k0 * G)
+///    R_x = xonly(k0 * G)
 ///
 /// 4. Put challenge
-/// e = H("BIP DKG/pop message/challenge", R_x || P_x || uint32_be(m)) mod n
+///    e = H("BIP DKG/pop message/challenge", R_x || P_x || uint32_be(m)) mod n
 ///
 /// 5. Put response
-/// s = k + e*d mod n
+///    s = k + e*d mod n
 ///
 /// 6. Serialize result into 64 byte array
-/// pop = R_x || bytes(s)
+///    pop = R_x || bytes(s)
 pub struct PopSigner {
     a0: Scalar,
     seed: [u8; 32],
@@ -95,10 +95,10 @@ impl SchnorrSigner for PopSigner {
 /// Verifies ChillDKG Proof of Possession (a Schnorr signature).
 ///
 /// Checks:
-/// pop = R_x || s
-/// e = H("BIP DKG/pop message/challenge", R_x || Com_x || uint32_be(m)) mod n
-/// R = s*G - e*Com
-/// accept iff R != infinity, has_even_y(R), and xonly(R) == R_x
+///    pop = R_x || s
+///    e = H("BIP DKG/pop message/challenge", R_x || Com_x || uint32_be(m)) mod n
+///    R = s*G - e*Com
+///    accept iff R != infinity, has_even_y(R), and xonly(R) == R_x
 pub struct PopVerifier {
     com: ProjectivePoint,
     message: [u8; 4],
