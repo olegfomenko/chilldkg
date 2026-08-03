@@ -1,6 +1,6 @@
 use crate::crypto::tags::TAG_VSS_COEFFS;
 use crate::crypto::{scalar_from_bytes, tagged_hash};
-use anyhow::Result;
+use crate::errors::Result;
 use k256::{ProjectivePoint, Scalar};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

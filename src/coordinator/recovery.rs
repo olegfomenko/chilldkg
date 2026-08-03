@@ -3,9 +3,8 @@
 use crate::coordinator::{CoordinatorDKGOutput, CoordinatorInitialState};
 use crate::crypto::certeq::verify_certeq_certificate;
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::RecoveryData;
-use anyhow::Result;
 
 /// Recover the coordinator's public DKG output from successful-session recovery data.
 pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {

@@ -4,11 +4,10 @@ use crate::chill_dkg_ensure;
 use crate::crypto::certeq::verify_certeq_certificate;
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::decrypt;
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::RecoveryData;
 use crate::party::transitions::serialize_enc_context;
 use crate::party::{DKGOutput, ParticipantInitialState};
-use anyhow::{Context, Result};
 use k256::{ProjectivePoint, Scalar};
 
 /// Recover this participant's DKG output from successful-session recovery data.
@@ -19,8 +18,8 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
 
     let idx = ParticipantInitialState { s }
         .validate_session_params(&transcript.host_pubkeys, t)
-        .map_err(|err| match <&ChillDkgError>::try_from(&err) {
-            Ok(ChillDkgError::HostSeckeyError { .. }) => ChillDkgError::HostSeckeyError(
+        .map_err(|err| match err {
+            ChillDkgError::HostSeckeyError(_) => ChillDkgError::HostSeckeyError(
                 "Host secret key does not match any host public key in the recovery data"
                     .to_owned(),
             ),
@@ -51,8 +50,7 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
         &enc_context,
         idx,
         &transcript.enc_secshares[idx],
-    )
-    .context("failed to decrypt recovered secret share")?;
+    )?;
     secshare += tweak;
 
     chill_dkg_ensure!(

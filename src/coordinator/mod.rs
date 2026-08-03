@@ -2,9 +2,8 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::ParticipantMsg1;
-use anyhow::Result;
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 

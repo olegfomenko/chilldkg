@@ -1,5 +1,6 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_scalar_bip340,
 };
@@ -7,7 +8,7 @@ pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
-use anyhow::{Result, ensure};
+use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
 
@@ -80,9 +81,9 @@ impl SchnorrSigner for PopSigner {
             nonce_preimage,
         )));
 
-        ensure!(
+        chill_dkg_ensure!(
             !bool::from(k.is_zero()),
-            "PoP generation failed: BIP340: nonce is zero"
+            ChillDkgError::RuntimeError("PoP generation failed: BIP340: nonce is zero".to_owned()),
         );
 
         Ok(compress_scalar_bip340(&k))

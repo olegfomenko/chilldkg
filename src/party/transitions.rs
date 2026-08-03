@@ -12,14 +12,13 @@ use crate::crypto::pop::{PopSigner, PopVerifier};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
 use crate::party::{
     DKGOutput, ParticipantInitialState, ParticipantState, ParticipantStep1State,
     ParticipantStep2State,
 };
-use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -60,7 +59,10 @@ impl ParticipantState for ParticipantInitialState {
 
         let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
 
-        ensure!(r != Scalar::ZERO, "EncPedPop secret nonce must not be zero");
+        chill_dkg_ensure!(
+            r != Scalar::ZERO,
+            ChillDkgError::RuntimeError("EncPedPop secret nonce must not be zero".to_owned()),
+        );
 
         let polynomial = Polynomial::new(&simpl_seed, t)?;
 
@@ -71,7 +73,7 @@ impl ParticipantState for ParticipantInitialState {
         let pop = PopSigner::new(
             polynomial
                 .coeff(0)
-                .context("Free term must exist")?
+                .ok_or_else(|| ChillDkgError::RuntimeError("Free term must exist".to_owned()))?
                 .to_owned(),
             simpl_seed,
             idx as u32,
