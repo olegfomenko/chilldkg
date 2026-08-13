@@ -1,8 +1,8 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_coordinator_msg1, parse_participant_msg1, parse_point_hex};
-use chilldkg::coordinator::{CoordinatorInitialState, CoordinatorState};
-use chilldkg::errors::ChillDkgError::{
+use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
+use chilldkg_rs::errors::ChillDkgError::{
     DuplicateHostPubkeyError, FaultyParticipantError, ThresholdOrCountError,
 };
 

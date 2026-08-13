@@ -4,11 +4,11 @@ use crate::common::{
     parse_coordinator_msg1, parse_coordinator_msg2, parse_hex_array, parse_participant_msg1,
     parse_point_hex, parse_scalar_hex, serialize_recovery_data,
 };
-use chilldkg::errors::ChillDkgError::{
+use chilldkg_rs::errors::ChillDkgError::{
     FaultyCoordinatorError, FaultyParticipantOrCoordinatorError,
 };
-use chilldkg::msg::ParticipantMsg2;
-use chilldkg::party::{ParticipantInitialState, ParticipantState};
+use chilldkg_rs::msg::ParticipantMsg2;
+use chilldkg_rs::party::{ParticipantInitialState, ParticipantState};
 
 pub mod common;
 

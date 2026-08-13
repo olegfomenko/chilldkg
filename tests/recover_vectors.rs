@@ -1,13 +1,13 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_point_hex, parse_scalar_hex};
-use chilldkg::coordinator::recovery::recover as recover_coordinator;
-use chilldkg::crypto::certeq::CertEQTranscript;
-use chilldkg::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
-use chilldkg::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature};
-use chilldkg::errors::{ChillDkgError, Result};
-use chilldkg::msg::RecoveryData;
-use chilldkg::party::recovery::recover as recover_participant;
+use chilldkg_rs::coordinator::recovery::recover as recover_coordinator;
+use chilldkg_rs::crypto::certeq::CertEQTranscript;
+use chilldkg_rs::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
+use chilldkg_rs::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature};
+use chilldkg_rs::errors::{ChillDkgError, Result};
+use chilldkg_rs::msg::RecoveryData;
+use chilldkg_rs::party::recovery::recover as recover_participant;
 
 pub mod common;
 

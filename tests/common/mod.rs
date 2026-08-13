@@ -1,7 +1,7 @@
-use chilldkg::crypto::ec::{CompressedPubKey, decompress_default};
-use chilldkg::crypto::scalar_from_bytes;
-use chilldkg::errors::{ChillDkgError, Result};
-use chilldkg::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
+use chilldkg_rs::crypto::ec::{CompressedPubKey, decompress_default};
+use chilldkg_rs::crypto::scalar_from_bytes;
+use chilldkg_rs::errors::{ChillDkgError, Result};
+use chilldkg_rs::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
