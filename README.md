@@ -180,21 +180,6 @@ Run all tests:
 cargo test
 ```
 
-The current integration vector suites include:
-
-- `participant_step1_vectors`
-- `participant_step2_vectors`
-- `participant_finalize_vectors`
-- `coordinator_step1_vectors`
-- `coordinator_finalize_vectors`
-- `recover_vectors`
-
-The vector files live in `tests/vectors` and are derived from the Python
-reference implementation. The test harness decodes reference hex strings into
-typed Rust values and then exercises this crate's state transitions. The vector
-case ids keep the reference numbering, so gaps indicate reference cases that are
-not represented by the typed Rust API.
-
 Current vector coverage:
 
 - `participant_step1_vectors`: reference cases `1, 3, 5, 6`.
