@@ -20,8 +20,9 @@ building blocks used by the protocol.
 ⚠️ This repository is a work in progress.
 
 - [x] The main participant and coordinator DKG flows.
-- [x] Tests with reference test vectors (`tests/vectors`).
+- [x] Tests with reference test vectors.
 - [x] Participant recovery using transcript and secret host key.
+- [x] Coordinator recovery using transcript.
 - [ ] Malicious behavior investigation.
 - [ ] Messages serialization.
 - [ ] Implementation audit.
