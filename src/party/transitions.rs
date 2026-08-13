@@ -1,7 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::certeq::{CertEQSigner, get_certeq_transcript, verify_certeq_certificate};
+use crate::crypto::certeq::{CertEQSigner, CertEQTranscript, verify_certeq_certificate};
 use crate::crypto::ec::{
     COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default, eval_pub_share,
     tap_tweak_no_script,
@@ -12,14 +12,13 @@ use crate::crypto::pop::{PopSigner, PopVerifier};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{scalar_from_bytes, tagged_hash};
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
 use crate::party::{
     DKGOutput, ParticipantInitialState, ParticipantState, ParticipantStep1State,
     ParticipantStep2State,
 };
-use anyhow::{Context, Result, ensure};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -60,7 +59,10 @@ impl ParticipantState for ParticipantInitialState {
 
         let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
 
-        ensure!(r != Scalar::ZERO, "EncPedPop secret nonce must not be zero");
+        chill_dkg_ensure!(
+            r != Scalar::ZERO,
+            ChillDkgError::RuntimeError("EncPedPop secret nonce must not be zero".to_owned()),
+        );
 
         let polynomial = Polynomial::new(&simpl_seed, t)?;
 
@@ -71,7 +73,7 @@ impl ParticipantState for ParticipantInitialState {
         let pop = PopSigner::new(
             polynomial
                 .coeff(0)
-                .context("Free term must exist")?
+                .ok_or_else(|| ChillDkgError::RuntimeError("Free term must exist".to_owned()))?
                 .to_owned(),
             simpl_seed,
             idx as u32,
@@ -184,12 +186,12 @@ impl ParticipantState for ParticipantStep1State {
             .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
-        let transcript = get_certeq_transcript(
+        let transcript = CertEQTranscript::new(
             self.t,
-            &sum_commitment,
-            &self.host_pubkeys,
-            &coordinator_msg.pubnonces,
-            &coordinator_msg.enc_secshares,
+            sum_commitment,
+            self.host_pubkeys,
+            coordinator_msg.pubnonces,
+            coordinator_msg.enc_secshares,
         );
 
         let sig = CertEQSigner::new(self.s, &transcript, self.idx, aux).sign()?;
@@ -202,7 +204,6 @@ impl ParticipantState for ParticipantStep1State {
             pubshares,
         };
         let next_stage = ParticipantStep2State {
-            host_pubkeys: self.host_pubkeys,
             transcript,
             dkg_output,
         };
@@ -217,7 +218,7 @@ impl ParticipantState for ParticipantStep2State {
     type Output = (DKGOutput, RecoveryData);
 
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
-        verify_certeq_certificate(&self.host_pubkeys, &self.transcript, &msg.cert)?;
+        verify_certeq_certificate(&self.transcript, &msg.cert)?;
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,

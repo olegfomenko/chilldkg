@@ -1,4 +1,5 @@
-use crate::crypto::pop::SchnorrSignature;
+use crate::crypto::certeq::CertEQTranscript;
+use crate::crypto::schnorr::SchnorrSignature;
 use k256::{ProjectivePoint, Scalar};
 
 /// Participant -> Coordinator, Step 1.
@@ -81,6 +82,6 @@ pub struct CoordinatorMsg2 {
 /// recovery_data = transcript || cert
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryData {
-    pub transcript: Vec<u8>,
+    pub transcript: CertEQTranscript,
     pub cert: Vec<SchnorrSignature>,
 }

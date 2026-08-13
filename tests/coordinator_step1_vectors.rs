@@ -1,100 +1,141 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use anyhow::{Context, Result, ensure};
+use crate::common::{parse_coordinator_msg1, parse_participant_msg1, parse_point_hex};
 use chilldkg::coordinator::{CoordinatorInitialState, CoordinatorState};
-use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::CoordinatorMsg1;
-use serde::Deserialize;
-
-use crate::common::{
-    ExpectedError, Params, assert_expected_error, parse_coordinator_msg1, parse_host_pubkeys,
-    parse_participant_msg1,
+use chilldkg::errors::ChillDkgError::{
+    DuplicateHostPubkeyError, FaultyParticipantError, ThresholdOrCountError,
 };
 
 pub mod common;
 
-#[derive(Debug, Deserialize)]
-struct VectorFile {
-    total_tests: usize,
-    pmsg1_pool: Vec<String>,
-    valid_test_cases: Vec<ValidCase>,
-    error_test_cases: Vec<ErrorCase>,
-}
+#[test]
+fn test_coordinator_step1_passes() {
+    let host_pubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
 
-#[derive(Debug, Deserialize)]
-struct ValidCase {
-    tc_id: usize,
-    pmsg1_indices: Vec<usize>,
-    params: Params,
-    expected_cmsg1: String,
-}
+    let t = 2;
 
-#[derive(Debug, Deserialize)]
-struct ErrorCase {
-    tc_id: usize,
-    pmsg1_indices: Vec<usize>,
-    params: Params,
-    expected_error: ExpectedError,
+    let pmsg1 = vec![
+        parse_participant_msg1(
+            "036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB03E99E34AA2A0646563DF90F2407D0D0E345EAE2CF7F07F9F6561302F724EFA74708AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CCC6C144287B356EF70378A7F1054FF00354A01352587DC076554A82CD324B66A17006774A86C116C19F2C021793EAB87DF19EE3A978C60F757BA192DA23BAE5F56A3612D0720F35828FCFBA9DFEA790883B185A8B75A27449AF23169C919B47C7",
+            t,
+            host_pubkeys.len(),
+        ).unwrap(),
+        parse_participant_msg1(
+            "037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6020584BF7D8C710F6A4988C6B16848C4BBA45A819107B2C49190E2D6FB666011AE53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF37022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD17A5C832E385A79C54BB5E400CF3FA2DF8A747E7F362AA3345CB0097DAF2C715FAA97DCA9CF742C4A54D5805B0705378C68129809D8D22A753A3F8F92FE61D7D14D27B6E1FE9BCEE26C96CD0B2CB18AE6A5D80C5792EA1FA2F09011B3F2596EE7",
+            t,
+            host_pubkeys.len(),
+        ).unwrap(),
+        parse_participant_msg1(
+            "026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A0203E26DE13A90DC4465BF155DCE35DFED355FE1902F39E9B4139F038F12C04DDF68EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A03D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806A124DC237A739AD28D8624726DD0277B3B1D7D030019F0FBBA9EE12D6007FEE360BC33A121886C897AC86F4F99CD493743B05216D0408C88A32D90A109837B6547CAC26451623B282A4FC67A2E454E27C7437BA3F620C687F061E9B264652DD6",
+            t,
+            host_pubkeys.len(),
+        ).unwrap(),
+    ];
+
+    let expected_cmsg1 = parse_coordinator_msg1(
+        "036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A03B9C3F15E5C0E086EDE931D69BABD36167BE6CCA8705378F8849A4F00EDA2941308AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF3768EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CC022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD103D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806E242A37A2E03838EDCB4B064425FBA5F5F8331EDDF79B46AACC70EEB714995A27B5A879577BDAF956EC9F1C234BD3942E2B2F0E372902637993C54815B69F7EAFF288C16C20D3F8D26B64E23599E6996A833E286FEAD5A7490151202E859E484",
+        t,
+        host_pubkeys.len(),
+    ).unwrap();
+
+    let initial = CoordinatorInitialState::new(host_pubkeys, t).unwrap();
+    let (_, cmsg1) = initial.next(pmsg1).unwrap();
+    assert_eq!(cmsg1, expected_cmsg1);
 }
 
 #[test]
-fn test_coordinator_step1_vectors() -> Result<()> {
-    let vectors = load_vectors()?;
+fn test_coordinator_step1_invalid_threshold() {
+    let host_pubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
 
-    for case in &vectors.valid_test_cases {
-        let actual = run_coordinator_step1(&vectors.pmsg1_pool, &case.pmsg1_indices, &case.params)
-            .context(format!("valid test case {} failed", case.tc_id))?;
+    let t = 0;
 
-        let expected = parse_coordinator_msg1(
-            &case.expected_cmsg1,
-            case.params.t,
-            case.params.hostpubkeys.len(),
-        )?;
-
-        assert_eq!(actual, expected);
-    }
-
-    for case in &vectors.error_test_cases {
-        let err = run_coordinator_step1(&vectors.pmsg1_pool, &case.pmsg1_indices, &case.params)
-            .expect_err("error test case unexpectedly succeeded");
-
-        let actual_error: &ChillDkgError = (&err).try_into().context(format!(
-            "error test case {} returned untyped error",
-            case.tc_id
-        ))?;
-
-        assert_expected_error(actual_error, &case.expected_error, case.tc_id);
-    }
-
-    Ok(())
+    let initial = CoordinatorInitialState::new(host_pubkeys, t);
+    assert!(initial.is_err());
+    assert_eq!(initial.err().unwrap(), ThresholdOrCountError);
 }
 
-fn load_vectors() -> Result<VectorFile> {
-    let vectors: VectorFile =
-        serde_json::from_str(include_str!("vectors/coordinator_step1_vectors.json"))?;
+#[test]
+fn test_coordinator_step1_duplicate() {
+    let host_pubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+    ];
 
-    ensure!(
-        vectors.total_tests == vectors.valid_test_cases.len() + vectors.error_test_cases.len(),
-        "invalid vector count"
+    let t = 2;
+
+    let initial = CoordinatorInitialState::new(host_pubkeys, t);
+    assert!(initial.is_err());
+    assert_eq!(
+        initial.err().unwrap(),
+        DuplicateHostPubkeyError {
+            participant1: 1,
+            participant2: 3
+        }
     );
-
-    Ok(vectors)
 }
 
-fn run_coordinator_step1(
-    pmsg1_pool: &[String],
-    pmsg1_indices: &[usize],
-    params: &Params,
-) -> Result<CoordinatorMsg1> {
-    let host_pubkeys = parse_host_pubkeys(params)?;
-    let initial = CoordinatorInitialState::new(host_pubkeys, params.t)?;
-    let n = initial.host_pubkeys.len();
-    let pmsgs1 = pmsg1_indices
-        .iter()
-        .map(|idx| parse_participant_msg1(&pmsg1_pool[*idx], initial.t, n))
-        .collect::<Result<Vec<_>>>()?;
+#[test]
+fn test_coordinator_step1_invalid_pmsg1() {
+    let host_pubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
 
-    let (_, cmsg1) = initial.next(pmsgs1)?;
+    let t = 2;
 
-    Ok(cmsg1)
+    let n = host_pubkeys.len();
+    let initial = CoordinatorInitialState::new(host_pubkeys, t).unwrap();
+
+    let pmsg1 = vec![
+        parse_participant_msg1(
+            "036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB03E99E34AA2A0646563DF90F2407D0D0E345EAE2CF7F07F9F6561302F724EFA74708AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CCC6C144287B356EF70378A7F1054FF00354A01352587DC076554A82CD324B66A17006774A86C116C19F2C021793EAB87DF19EE3A978C60F757BA192DA23BAE5F56A3612D0720F35828FCFBA9DFEA790883B185A8B75A27449AF23169C919B47C7",
+            t,
+            n,
+        ).unwrap(),
+        parse_participant_msg1(
+            "037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6020584BF7D8C710F6A4988C6B16848C4BBA45A819107B2C49190E2D6FB666011AE53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF37022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD17A5C832E385A79C54BB5E400CF3FA2DF8A747E7F362AA3345CB0097DAF2C715FAA97DCA9CF742C4A54D5805B0705378C68129809D8D22A753A3F8F92FE61D7D1",
+            t,
+            n,
+        ).unwrap(),
+        parse_participant_msg1(
+            "026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A0203E26DE13A90DC4465BF155DCE35DFED355FE1902F39E9B4139F038F12C04DDF68EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A03D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806A124DC237A739AD28D8624726DD0277B3B1D7D030019F0FBBA9EE12D6007FEE360BC33A121886C897AC86F4F99CD493743B05216D0408C88A32D90A109837B6547CAC26451623B282A4FC67A2E454E27C7437BA3F620C687F061E9B264652DD6",
+            t,
+            n,
+        ).unwrap(),
+    ];
+
+    let result = initial.next(pmsg1);
+
+    assert!(result.is_err());
+    assert_eq!(
+        result.err().unwrap(),
+        FaultyParticipantError {
+            participant: 1,
+            message: "missing encrypted secret shares".to_owned()
+        },
+    );
 }

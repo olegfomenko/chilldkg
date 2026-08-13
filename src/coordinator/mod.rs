@@ -1,9 +1,9 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::errors::ChillDkgError;
+use crate::crypto::certeq::CertEQTranscript;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::ParticipantMsg1;
-use anyhow::Result;
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
@@ -51,9 +51,9 @@ impl CoordinatorInitialState {
                 ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
-            for j in (i + 1)..self.host_pubkeys.len() {
+            for (j, P_j) in self.host_pubkeys.iter().enumerate().skip(i + 1) {
                 chill_dkg_ensure!(
-                    *P_i != self.host_pubkeys[j],
+                    P_i != P_j,
                     ChillDkgError::DuplicateHostPubkeyError {
                         participant1: i,
                         participant2: j,
@@ -146,7 +146,7 @@ pub struct CoordinatorStep1State {
     /// Equality-check transcript.
     ///
     /// Math: `eq_input`.
-    pub transcript: Vec<u8>,
+    pub transcript: CertEQTranscript,
 
     /// Coordinator's DKG output.
     pub dkg_output: CoordinatorDKGOutput,

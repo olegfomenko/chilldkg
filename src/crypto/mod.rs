@@ -6,7 +6,7 @@ pub mod pop;
 pub mod schnorr;
 pub mod tags;
 
-use anyhow::{Context, Result};
+use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::PrimeField;
 use k256::{FieldBytes, Scalar};
 use sha2::{Digest, Sha256};
@@ -24,8 +24,9 @@ pub fn tagged_hash(tag: impl AsRef<[u8]>, x: impl AsRef<[u8]>) -> TaggedHash {
 }
 
 pub fn scalar_from_bytes(x: [u8; 32]) -> Result<Scalar> {
-    let res = Option::<Scalar>::from(Scalar::from_repr(FieldBytes::from(x)))
-        .context("failed to convert 32 byte array into field element")?;
+    let res = Option::<Scalar>::from(Scalar::from_repr(FieldBytes::from(x))).ok_or_else(|| {
+        ChillDkgError::RuntimeError("failed to convert 32 byte array into field element".to_owned())
+    })?;
 
     Ok(res)
 }

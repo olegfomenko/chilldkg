@@ -1,9 +1,10 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
-use anyhow::{Result, ensure};
+use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
 use sha2::{Digest, Sha256};
@@ -96,13 +97,15 @@ pub fn encrypt(
     idx: usize,
     shares: &[Scalar],
 ) -> Result<Vec<Scalar>> {
-    ensure!(
+    chill_dkg_ensure!(
         idx < P.len(),
-        "Encryption failed: participant index out of range"
+        ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
     );
-    ensure!(
+    chill_dkg_ensure!(
         shares.len() == P.len(),
-        "Encryption failed: number of shares must match number of encryption keys"
+        ChillDkgError::RuntimeError(
+            "Encryption failed: number of shares must match number of encryption keys".to_owned()
+        ),
     );
 
     let R_idx = ProjectivePoint::GENERATOR * r_idx;
@@ -145,9 +148,9 @@ pub fn decrypt(
     idx: usize,
     aggr_ciphertexts: &Scalar,
 ) -> Result<Scalar> {
-    ensure!(
+    chill_dkg_ensure!(
         idx < R.len(),
-        "Encryption failed: participant index out of range"
+        ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
     );
 
     let mut aggr_pads = Scalar::ZERO;

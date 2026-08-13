@@ -1,3 +1,4 @@
+use std::array::TryFromSliceError;
 use thiserror::Error;
 
 #[macro_export]
@@ -69,13 +70,10 @@ pub enum ChillDkgError {
     RuntimeError(String),
 }
 
-impl<'a> TryFrom<&'a anyhow::Error> for &'a ChillDkgError {
-    type Error = anyhow::Error;
+pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
-    fn try_from(error: &'a anyhow::Error) -> Result<Self, Self::Error> {
-        error
-            .chain()
-            .find_map(|cause| cause.downcast_ref::<ChillDkgError>())
-            .ok_or_else(|| anyhow::anyhow!("error chain does not contain ChillDkgError"))
+impl From<TryFromSliceError> for ChillDkgError {
+    fn from(e: TryFromSliceError) -> Self {
+        ChillDkgError::RuntimeError(format!("{:?}", e))
     }
 }

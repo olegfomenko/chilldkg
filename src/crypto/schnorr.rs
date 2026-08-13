@@ -1,11 +1,12 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
+use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_point_bip340,
     compress_scalar_bip340, even_y_point,
 };
 use crate::crypto::scalar_from_bytes;
-use anyhow::{Context, Result, bail, ensure};
+use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::{ProjectivePoint, Scalar};
@@ -23,9 +24,9 @@ pub trait SchnorrSigner {
     fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)>;
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
     fn sign(&self) -> Result<SchnorrSignature> {
-        ensure!(
+        chill_dkg_ensure!(
             !bool::from(self.secret_key().is_zero()),
-            "Schnorr signing failed: secret key is zero"
+            ChillDkgError::RuntimeError("Schnorr signing failed: secret key is zero".to_owned()),
         );
 
         let (P_x, d) = self.x_only_key();
@@ -52,38 +53,44 @@ pub trait SchnorrVerifier {
     }
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
     fn verify(&self, sig: SchnorrSignature) -> Result<()> {
-        ensure!(
+        chill_dkg_ensure!(
             !bool::from(self.pub_key().is_identity()),
-            "Schnorr verification failed: public key is identity"
+            ChillDkgError::RuntimeError(
+                "Schnorr verification failed: public key is identity".to_owned()
+            ),
         );
 
-        let mut r_x = [0u8; X_ONLY_POINT_BYTES_SIZE];
-        r_x.copy_from_slice(&sig[..X_ONLY_POINT_BYTES_SIZE]);
+        let r_x: BIP340XOnlyPubKey = sig[..X_ONLY_POINT_BYTES_SIZE].try_into()?;
+        let s_bytes: [u8; EC_SCALAR_BYTES_SIZE] = sig[X_ONLY_POINT_BYTES_SIZE..].try_into()?;
 
-        let mut s_bytes = [0u8; EC_SCALAR_BYTES_SIZE];
-        s_bytes.copy_from_slice(&sig[X_ONLY_POINT_BYTES_SIZE..]);
-
-        let s = scalar_from_bytes(s_bytes)
-            .context("Schnorr verification failed: invalid response scalar")?;
+        let s = scalar_from_bytes(s_bytes).map_err(|_| {
+            ChillDkgError::RuntimeError(
+                "Schnorr verification failed: invalid response scalar".to_owned(),
+            )
+        })?;
 
         let (P, p_x) = self.x_only_pubkey();
         let e = self.challenge(&r_x, &p_x)?;
 
         let R = ProjectivePoint::GENERATOR * s - P * e;
-        ensure!(
+        chill_dkg_ensure!(
             !bool::from(R.is_identity()),
-            "Schnorr verification failed: nonce is identity"
+            ChillDkgError::RuntimeError(
+                "Schnorr verification failed: nonce is identity".to_owned()
+            ),
         );
 
         let R = R.to_affine();
-        ensure!(
+        chill_dkg_ensure!(
             !bool::from(R.y_is_odd()),
-            "Schnorr verification failed: nonce has odd Y"
+            ChillDkgError::RuntimeError("Schnorr verification failed: nonce has odd Y".to_owned()),
         );
 
         let computed_r_x: [u8; X_ONLY_POINT_BYTES_SIZE] = R.x().into();
         if computed_r_x != r_x {
-            bail!("Schnorr verification failed: invalid signature");
+            return Err(ChillDkgError::RuntimeError(
+                "Schnorr verification failed: invalid signature".to_owned(),
+            ));
         }
 
         Ok(())

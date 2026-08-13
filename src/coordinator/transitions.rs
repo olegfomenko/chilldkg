@@ -4,14 +4,13 @@ use crate::chill_dkg_ensure;
 use crate::coordinator::{
     CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
-use crate::crypto::certeq::{CertEQVerifier, get_certeq_transcript};
+use crate::crypto::certeq::{CertEQTranscript, CertEQVerifier};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::schnorr::SchnorrVerifier;
-use crate::errors::ChillDkgError;
+use crate::errors::{ChillDkgError, Result};
 use crate::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
-use anyhow::Result;
 use k256::ProjectivePoint;
 
 impl CoordinatorState for CoordinatorInitialState {
@@ -54,12 +53,12 @@ impl CoordinatorState for CoordinatorInitialState {
             .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
             .collect();
 
-        let transcript = get_certeq_transcript(
+        let transcript = CertEQTranscript::new(
             self.t,
-            &sum_commitment,
-            &self.host_pubkeys,
-            &coordinator_msg.pubnonces,
-            &coordinator_msg.enc_secshares,
+            sum_commitment,
+            self.host_pubkeys.clone(),
+            coordinator_msg.pubnonces.clone(),
+            coordinator_msg.enc_secshares.clone(),
         );
 
         let dkg_output = CoordinatorDKGOutput {
@@ -102,8 +101,11 @@ impl CoordinatorState for CoordinatorStep1State {
             {
                 return Err(ChillDkgError::FaultyParticipantError {
                     participant: i,
-                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err)
-                }.into());
+                    message: format!(
+                        "Participant has provided an invalid signature for the certificate, error = {:?}",
+                        err
+                    ),
+                });
             }
         }
 
