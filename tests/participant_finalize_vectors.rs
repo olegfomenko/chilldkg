@@ -1,187 +1,156 @@
-#![allow(dead_code, non_snake_case)] // Uppercase identifiers denote curve points.
-
-use anyhow::{Context, Result, ensure};
-use chilldkg::errors::ChillDkgError;
-use chilldkg::msg::{CoordinatorMsg2, RecoveryData};
-use chilldkg::party::{DKGOutput, ParticipantInitialState, ParticipantState};
-use serde::Deserialize;
+#![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{
-    ExpectedError, Params, assert_expected_error, parse_coordinator_msg1, parse_hex_array,
-    parse_host_pubkeys, parse_participant_msg1, parse_participant_msg2, parse_point_hex,
-    parse_scalar_hex, serialize_recovery_data,
+    parse_coordinator_msg1, parse_coordinator_msg2, parse_hex_array, parse_participant_msg1,
+    parse_point_hex, parse_scalar_hex, serialize_recovery_data,
 };
+use chilldkg::errors::ChillDkgError::{
+    FaultyCoordinatorError, FaultyParticipantOrCoordinatorError,
+};
+use chilldkg::msg::ParticipantMsg2;
+use chilldkg::party::{ParticipantInitialState, ParticipantState};
 
 pub mod common;
 
-#[derive(Debug, Deserialize)]
-struct VectorFile {
-    total_tests: usize,
-    params: Params,
-    hostseckey: String,
-    random: String,
-    aux_rand: String,
-    pmsg1: String,
-    cmsg1: String,
-    pmsg2: String,
-    valid_test_cases: Vec<ValidCase>,
-    error_test_cases: Vec<ErrorCase>,
-}
+#[test]
+fn test_participant_finalize_passes() {
+    let hostseckey =
+        parse_scalar_hex("ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207")
+            .unwrap();
+    let random =
+        parse_hex_array("42B53D62E27380D6F7096EDA1C28C57DDB89FCD4CE5B843EDAC220E165B5A7EC")
+            .unwrap();
+    let aux_rand =
+        parse_hex_array("005F5C3A69BB274F4559490AD754F1F5AFFABAED4C71AD5D8ACBAEFC2B491573")
+            .unwrap();
+    let hostpubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
+    let t = 2;
+    let n = hostpubkeys.len();
+    let pmsg1 = parse_participant_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB03E99E34AA2A0646563DF90F2407D0D0E345EAE2CF7F07F9F6561302F724EFA74708AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CCC6C144287B356EF70378A7F1054FF00354A01352587DC076554A82CD324B66A17006774A86C116C19F2C021793EAB87DF19EE3A978C60F757BA192DA23BAE5F56A3612D0720F35828FCFBA9DFEA790883B185A8B75A27449AF23169C919B47C7", t, n).unwrap();
+    let cmsg1 = parse_coordinator_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A03B9C3F15E5C0E086EDE931D69BABD36167BE6CCA8705378F8849A4F00EDA2941308AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF3768EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CC022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD103D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806E242A37A2E03838EDCB4B064425FBA5F5F8331EDDF79B46AACC70EEB714995A27B5A879577BDAF956EC9F1C234BD3942E2B2F0E372902637993C54815B69F7EAFF288C16C20D3F8D26B64E23599E6996A833E286FEAD5A7490151202E859E484", t, n).unwrap();
+    let pmsg2 = ParticipantMsg2 {
+        sig: parse_hex_array("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE").unwrap(),
+    };
+    let cmsg2 = parse_coordinator_msg2("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE3B1B96C40D7F9A378F2A61FACF8469447344B5280F5E7B3C66B560709A6FA4D7E083E650F3C109995ACB96EEA2EE4EF252257E1BF92FFF121CE916DE2D7C4B5479195E7CBE22A8B53C41012ABEA37F0B59579E43EDC6477E8CC5C7EB9F3C8BF7AEC850C63A659FADD91C9063908054FC4D193594E132ADFBE1F24BE74C8BEA7A").unwrap();
+    let secshare =
+        parse_scalar_hex("CF1009015DDCBEB326BC5C7C556CECAC8BCA838ECAA0627DC6D9E1367589AB85")
+            .unwrap();
+    let threshold_pubkey =
+        parse_point_hex("021979452A2E878B2A5BB662F293D23C5795991FB984A8DFDE6EAA885AB72B311A")
+            .unwrap();
+    let pubshares = vec![
+        parse_point_hex("03D5DF677B4FD40950902A2D3D6469723FADCE0CDD939C8150937EF1D15801DDBC")
+            .unwrap(),
+        parse_point_hex("03B53DF94A01A578300EBB5095B36668E810FE030C200F887CD9BD7F3AD40F31CA")
+            .unwrap(),
+        parse_point_hex("0377FADE50E2F82A4FD697CF403F8C717E8614199AA87458BCB8A16E6289C26F8B")
+            .unwrap(),
+    ];
+    let recovery_data_hex = "0000000203B74C6FD38288DDF94300E887B12DD40F655791144A07C32487FBD81CC228C07903B9C3F15E5C0E086EDE931D69BABD36167BE6CCA8705378F8849A4F00EDA2941303AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F303AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A30260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CC022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD103D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806E242A37A2E03838EDCB4B064425FBA5F5F8331EDDF79B46AACC70EEB714995A27B5A879577BDAF956EC9F1C234BD3942E2B2F0E372902637993C54815B69F7EAFF288C16C20D3F8D26B64E23599E6996A833E286FEAD5A7490151202E859E484A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE3B1B96C40D7F9A378F2A61FACF8469447344B5280F5E7B3C66B560709A6FA4D7E083E650F3C109995ACB96EEA2EE4EF252257E1BF92FFF121CE916DE2D7C4B5479195E7CBE22A8B53C41012ABEA37F0B59579E43EDC6477E8CC5C7EB9F3C8BF7AEC850C63A659FADD91C9063908054FC4D193594E132ADFBE1F24BE74C8BEA7A";
 
-#[derive(Debug, Deserialize)]
-struct ValidCase {
-    tc_id: usize,
-    cmsg2: String,
-    expected_output: ExpectedOutput,
-}
-
-#[derive(Debug, Deserialize)]
-struct ErrorCase {
-    tc_id: usize,
-    cmsg2: String,
-    expected_error: ExpectedError,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExpectedOutput {
-    dkg_output: ExpectedDkgOutput,
-    recovery_data: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExpectedDkgOutput {
-    secshare: String,
-    threshold_pubkey: String,
-    pubshares: Vec<String>,
+    let initial = ParticipantInitialState { s: hostseckey };
+    let (next, actual_pmsg1) = initial.next((hostpubkeys, t, random)).unwrap();
+    assert_eq!(actual_pmsg1, pmsg1);
+    let (next, actual_pmsg2) = next.unwrap().next((cmsg1, aux_rand)).unwrap();
+    assert_eq!(actual_pmsg2, pmsg2);
+    let (_, (dkg_output, recovery_data)) = next.unwrap().next(cmsg2).unwrap();
+    assert_eq!(dkg_output.idx, 0);
+    assert_eq!(dkg_output.t, t);
+    assert_eq!(dkg_output.secshare, secshare);
+    assert_eq!(dkg_output.threshold_pubkey, threshold_pubkey);
+    assert_eq!(dkg_output.pubshares, pubshares);
+    assert_eq!(
+        hex::encode_upper(serialize_recovery_data(&recovery_data)),
+        recovery_data_hex
+    );
 }
 
 #[test]
-fn test_participant_finalize_vectors() -> Result<()> {
-    let vectors = load_vectors()?;
+fn test_participant_finalize_rejects_short_certificate() {
+    let hostseckey =
+        parse_scalar_hex("ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207")
+            .unwrap();
+    let random =
+        parse_hex_array("42B53D62E27380D6F7096EDA1C28C57DDB89FCD4CE5B843EDAC220E165B5A7EC")
+            .unwrap();
+    let aux_rand =
+        parse_hex_array("005F5C3A69BB274F4559490AD754F1F5AFFABAED4C71AD5D8ACBAEFC2B491573")
+            .unwrap();
+    let hostpubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
+    let t = 2;
+    let n = hostpubkeys.len();
+    let pmsg1 = parse_participant_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB03E99E34AA2A0646563DF90F2407D0D0E345EAE2CF7F07F9F6561302F724EFA74708AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CCC6C144287B356EF70378A7F1054FF00354A01352587DC076554A82CD324B66A17006774A86C116C19F2C021793EAB87DF19EE3A978C60F757BA192DA23BAE5F56A3612D0720F35828FCFBA9DFEA790883B185A8B75A27449AF23169C919B47C7", t, n).unwrap();
+    let cmsg1 = parse_coordinator_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A03B9C3F15E5C0E086EDE931D69BABD36167BE6CCA8705378F8849A4F00EDA2941308AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF3768EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CC022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD103D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806E242A37A2E03838EDCB4B064425FBA5F5F8331EDDF79B46AACC70EEB714995A27B5A879577BDAF956EC9F1C234BD3942E2B2F0E372902637993C54815B69F7EAFF288C16C20D3F8D26B64E23599E6996A833E286FEAD5A7490151202E859E484", t, n).unwrap();
+    let pmsg2 = ParticipantMsg2 {
+        sig: parse_hex_array("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE").unwrap(),
+    };
+    let cmsg2 = parse_coordinator_msg2("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE3B1B96C40D7F9A378F2A61FACF8469447344B5280F5E7B3C66B560709A6FA4D7E083E650F3C109995ACB96EEA2EE4EF252257E1BF92FFF121CE916DE2D7C4B54").unwrap();
 
-    for case in &vectors.valid_test_cases {
-        let (dkg_output, recovery_data) = run_participant_finalize(&vectors, &case.cmsg2)
-            .context(format!("valid test case {} failed", case.tc_id))?;
-
-        assert_expected_output(
-            &dkg_output,
-            &recovery_data,
-            &case.expected_output,
-            &vectors.params,
-        )?;
-    }
-
-    for case in &vectors.error_test_cases {
-        let err = run_participant_finalize(&vectors, &case.cmsg2)
-            .err()
-            .context("error test case unexpectedly succeeded")?;
-
-        let actual_error: &ChillDkgError = (&err).try_into().context(format!(
-            "error test case {} returned untyped error",
-            case.tc_id
-        ))?;
-
-        assert_expected_error(actual_error, &case.expected_error, case.tc_id);
-    }
-
-    Ok(())
+    let initial = ParticipantInitialState { s: hostseckey };
+    let (next, actual_pmsg1) = initial.next((hostpubkeys, t, random)).unwrap();
+    assert_eq!(actual_pmsg1, pmsg1);
+    let (next, actual_pmsg2) = next.unwrap().next((cmsg1, aux_rand)).unwrap();
+    assert_eq!(actual_pmsg2, pmsg2);
+    let err = next.unwrap().next(cmsg2).err().unwrap();
+    assert_eq!(
+        err,
+        FaultyCoordinatorError("invalid certificate length".to_owned())
+    );
 }
 
-fn load_vectors() -> Result<VectorFile> {
-    let vectors: VectorFile =
-        serde_json::from_str(include_str!("vectors/participant_finalize_vectors.json"))?;
+#[test]
+fn test_participant_finalize_rejects_invalid_signature() {
+    let hostseckey =
+        parse_scalar_hex("ADE179B2C56CB75868D44B333C16C89CB00DFDE378AD79C84D0CCE856E4F9207")
+            .unwrap();
+    let random =
+        parse_hex_array("42B53D62E27380D6F7096EDA1C28C57DDB89FCD4CE5B843EDAC220E165B5A7EC")
+            .unwrap();
+    let aux_rand =
+        parse_hex_array("005F5C3A69BB274F4559490AD754F1F5AFFABAED4C71AD5D8ACBAEFC2B491573")
+            .unwrap();
+    let hostpubkeys = vec![
+        parse_point_hex("03AED316469060698D774150EFD7F8F406A2BAB516DD7D22CB258323C59C6417F3")
+            .unwrap(),
+        parse_point_hex("03AEB5AE20783D4858F6767747963F144C7DB8ABA328625CC8A87F7676D8CDEEE7")
+            .unwrap(),
+        parse_point_hex("021A48BBCCAC751AE9EC1EA7A7F8D421D5FD60AAB44E6D2F37B31873098A77B7A3")
+            .unwrap(),
+    ];
+    let t = 2;
+    let n = hostpubkeys.len();
+    let pmsg1 = parse_participant_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB03E99E34AA2A0646563DF90F2407D0D0E345EAE2CF7F07F9F6561302F724EFA74708AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CCC6C144287B356EF70378A7F1054FF00354A01352587DC076554A82CD324B66A17006774A86C116C19F2C021793EAB87DF19EE3A978C60F757BA192DA23BAE5F56A3612D0720F35828FCFBA9DFEA790883B185A8B75A27449AF23169C919B47C7", t, n).unwrap();
+    let cmsg1 = parse_coordinator_msg1("036BEE122EF60CBBB5DFC3572FE6D3A9AC0B35BB427E250F42C38F7C8229889CAB037C42E200B601CD439CDEAA12FB2BD8949C566E59096AA9207165C6FF0602B1D6026F714517277FB154C47E487FBE415C25C0D0F79466F1479B31A8D78319978D8A03B9C3F15E5C0E086EDE931D69BABD36167BE6CCA8705378F8849A4F00EDA2941308AE5A94BBDD3FC53924623E0D6764E089D679048F699118D7807884AD13CF484866D8210BCB76DAEB103AD6BA1CED0DBFE78F1E8A44F26FC69D5464BF23324D53EF7BE0C965DBBA2418E1FAA16FB9CA5FC990337E0E1858F263A8B88AE081D053CB4BCA7D90B63225ABA7C40F4B86B1D2E91D0EEFC52657B70695BE96FEEF3768EFCB547A2ED10F9D35C10E8FFE3A5A7F049FF7FFBF5F7400586830FBAC2B6908C2742DE20520065E89CF8CF7DBD279063967C0E1E77A97297BFDDF28B58C1A0260537C74BC2B79676CDE217FFA7D48236D4A309954153DEB39A31AADF6B369CC022E7B7DD7A0B4A72097703E60648B615A4DDDF2D715A5E0992379537A44C13AD103D1FD5A186167E5DE84B11C0F56E1FC6808D2DB35E6E3587243CF59DE605CB806E242A37A2E03838EDCB4B064425FBA5F5F8331EDDF79B46AACC70EEB714995A27B5A879577BDAF956EC9F1C234BD3942E2B2F0E372902637993C54815B69F7EAFF288C16C20D3F8D26B64E23599E6996A833E286FEAD5A7490151202E859E484", t, n).unwrap();
+    let pmsg2 = ParticipantMsg2 {
+        sig: parse_hex_array("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE").unwrap(),
+    };
+    let cmsg2 = parse_coordinator_msg2("A6C2DE535556E47C8F3427B9716CFC4A66ADD0F2788AB793E2FBFF7D81DA06315C3F62CAA2B85E369922E68A94113EB839B5E3E424A4F4BF2E8D2908F517E8BE3B1B96C40D7F9A378F2A61FACF8469447344B5280F5E7B3C66B560709A6FA4D7E083E650F3C109995ACB96EEA2EE4EF252257E1BF92FFF121CE916DE2D7C4B5409C289578B96E6283AB13E4741FB489FC147FB1A5F446A314BA73C052131EFB04B83247A0BCEDF5205202AD64188B24B0BC5B51A17AEB218BD98DBE000C843B9").unwrap();
 
-    ensure!(
-        vectors.total_tests == vectors.valid_test_cases.len() + vectors.error_test_cases.len(),
-        "invalid vector count"
-    );
-
-    Ok(vectors)
-}
-
-fn run_participant_finalize(
-    vectors: &VectorFile,
-    cmsg2_hex: &str,
-) -> Result<(DKGOutput, RecoveryData)> {
-    let s = parse_scalar_hex(&vectors.hostseckey)?;
-    let host_pubkeys = parse_host_pubkeys(&vectors.params)?;
-    let initial = ParticipantInitialState { s };
-    let (next, pmsg1) = initial.next((
-        host_pubkeys,
-        vectors.params.t,
-        parse_hex_array(&vectors.random)?,
-    ))?;
+    let initial = ParticipantInitialState { s: hostseckey };
+    let (next, actual_pmsg1) = initial.next((hostpubkeys, t, random)).unwrap();
+    assert_eq!(actual_pmsg1, pmsg1);
+    let (next, actual_pmsg2) = next.unwrap().next((cmsg1, aux_rand)).unwrap();
+    assert_eq!(actual_pmsg2, pmsg2);
+    let err = next.unwrap().next(cmsg2).err().unwrap();
     assert_eq!(
-        pmsg1,
-        parse_participant_msg1(
-            &vectors.pmsg1,
-            vectors.params.t,
-            vectors.params.hostpubkeys.len(),
-        )?
+        err,
+        FaultyParticipantOrCoordinatorError {
+            participant: 2,
+            message: "Participant has provided an invalid signature for the certificate, error = RuntimeError(\"Schnorr verification failed: nonce has odd Y\")".to_owned(),
+        }
     );
-
-    let cmsg1 = parse_coordinator_msg1(
-        &vectors.cmsg1,
-        vectors.params.t,
-        vectors.params.hostpubkeys.len(),
-    )?;
-    let aux_rand = parse_hex_array(&vectors.aux_rand)?;
-    let (next, pmsg2) = next
-        .context("missing participant step1 state")?
-        .next((cmsg1, aux_rand))?;
-    assert_eq!(pmsg2, parse_participant_msg2(&vectors.pmsg2)?);
-
-    let cmsg2 = parse_coordinator_msg2(cmsg2_hex, vectors.params.hostpubkeys.len())?;
-    let (_, output) = next
-        .context("missing participant step2 state")?
-        .next(cmsg2)?;
-
-    Ok(output)
-}
-
-fn parse_coordinator_msg2(hex: &str, _n: usize) -> Result<CoordinatorMsg2> {
-    let bytes = hex::decode(hex)?;
-    let cert = bytes
-        .chunks_exact(64)
-        .map(|chunk| {
-            let mut sig = [0u8; 64];
-            sig.copy_from_slice(chunk);
-            sig
-        })
-        .collect();
-
-    Ok(CoordinatorMsg2 { cert })
-}
-
-fn assert_expected_output(
-    actual: &DKGOutput,
-    recovery_data: &RecoveryData,
-    expected: &ExpectedOutput,
-    params: &Params,
-) -> Result<()> {
-    assert_eq!(actual.idx, 0);
-    assert_eq!(actual.t, params.t);
-    assert_eq!(
-        actual.secshare,
-        parse_scalar_hex(&expected.dkg_output.secshare)?
-    );
-    assert_eq!(
-        actual.threshold_pubkey,
-        parse_point_hex(&expected.dkg_output.threshold_pubkey)?
-    );
-
-    let expected_pubshares = expected
-        .dkg_output
-        .pubshares
-        .iter()
-        .map(|pubshare| parse_point_hex(pubshare))
-        .collect::<Result<Vec<_>>>()?;
-    assert_eq!(actual.pubshares, expected_pubshares);
-
-    assert_eq!(
-        serialize_recovery_data(recovery_data),
-        hex::decode(&expected.recovery_data)?,
-    );
-
-    Ok(())
 }
