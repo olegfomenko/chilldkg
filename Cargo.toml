@@ -1,7 +1,9 @@
 [package]
-name = "chilldkg"
+name = "chilldkg-rs"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Rust implementation of the ChillDKG refers to the BlockstreamResearch BIP-FROST-DKG"
 
 [dependencies]
 k256 = { version = "0.13", features = ["arithmetic", "expose-field"], default-features = false }
