@@ -8,7 +8,7 @@ use k256::{ProjectivePoint, Scalar};
 pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<ParticipantMsg1> {
     let bytes = decode(hex)?;
     let fixed_len = 33 * t + 64 + 33;
-    if bytes.len() < fixed_len || (bytes.len() - fixed_len) % 32 != 0 {
+    if bytes.len() < fixed_len || !(bytes.len() - fixed_len).is_multiple_of(32) {
         return Err(ChillDkgError::RuntimeError(
             "invalid pmsg1 length".to_owned(),
         ));
