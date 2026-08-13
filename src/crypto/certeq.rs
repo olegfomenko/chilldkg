@@ -188,15 +188,13 @@ pub fn verify_certeq_certificate(
 
     for i in 0..host_pubkeys.len() {
         if let Err(err) = CertEQVerifier::new(host_pubkeys[i], transcript, i).verify(cert[i]) {
-            return Err(
-                ChillDkgError::FaultyParticipantOrCoordinatorError {
-                    participant: i,
-                    message: format!(
-                        "Participant has provided an invalid signature for the certificate, error = {:?}",
-                        err
-                    ),
-                }
-                .into());
+            return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
+                participant: i,
+                message: format!(
+                    "Participant has provided an invalid signature for the certificate, error = {:?}",
+                    err
+                ),
+            });
         }
     }
 

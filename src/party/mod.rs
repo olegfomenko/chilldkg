@@ -143,12 +143,9 @@ impl ParticipantInitialState {
         host_pubkeys
             .iter()
             .position(|P_i| *P_i == ProjectivePoint::GENERATOR * self.s)
-            .ok_or(
-                ChillDkgError::HostSeckeyError(
-                    "Host secret key does not match any host public key".to_owned(),
-                )
-                .into(),
-            )
+            .ok_or(ChillDkgError::HostSeckeyError(
+                "Host secret key does not match any host public key".to_owned(),
+            ))
     }
 }
 

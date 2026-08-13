@@ -101,8 +101,11 @@ impl CoordinatorState for CoordinatorStep1State {
             {
                 return Err(ChillDkgError::FaultyParticipantError {
                     participant: i,
-                    message: format!("Participant has provided an invalid signature for the certificate, error = {:?}", err)
-                }.into());
+                    message: format!(
+                        "Participant has provided an invalid signature for the certificate, error = {:?}",
+                        err
+                    ),
+                });
             }
         }
 
