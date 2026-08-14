@@ -10,6 +10,11 @@ use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::PrimeField;
 use k256::{FieldBytes, Scalar};
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
+
+/// A secret scalar that wipes its memory on drop.
+/// Note: `*secret` yields a plain `Copy` of the value — deref with intent.
+pub type SecretScalar = Zeroizing<Scalar>;
 
 pub type TaggedHash = [u8; 32];
 

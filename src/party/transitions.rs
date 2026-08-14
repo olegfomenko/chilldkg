@@ -3,8 +3,8 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::{CertEQSigner, CertEQTranscript, verify_certeq_certificate};
 use crate::crypto::ec::{
-    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default, eval_pub_share,
-    tap_tweak_no_script,
+    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default,
+    eval_pub_share, tap_tweak_no_script,
 };
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::poly::Polynomial;
@@ -21,6 +21,7 @@ use crate::party::{
 };
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
+use zeroize::Zeroizing;
 
 pub(crate) fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
     let mut enc_context = Vec::with_capacity(4 + COMPRESSED_POINT_BYTES_SIZE * host_pubkeys.len());
@@ -33,15 +34,22 @@ pub(crate) fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) 
     enc_context
 }
 
-pub(crate) fn derive_simpl_seed(s: &Scalar, random: &[u8; 32], enc_context: &[u8]) -> [u8; 32] {
-    let seed: [u8; EC_SCALAR_BYTES_SIZE] = s.to_bytes().into();
+pub(crate) fn derive_simpl_seed(
+    s: &Scalar,
+    random: &[u8; 32],
+    enc_context: &[u8],
+) -> Zeroizing<[u8; 32]> {
+    let seed: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
+        Zeroizing::from(ScalarBytes::from(s.to_bytes()));
 
-    let mut preimage = Vec::with_capacity(EC_SCALAR_BYTES_SIZE + random.len() + enc_context.len());
-    preimage.extend_from_slice(&seed);
+    let mut preimage = Zeroizing::new(Vec::with_capacity(
+        EC_SCALAR_BYTES_SIZE + random.len() + enc_context.len(),
+    ));
+    preimage.extend_from_slice(seed.as_slice());
     preimage.extend_from_slice(random);
     preimage.extend_from_slice(enc_context);
 
-    tagged_hash(TAG_ENCPEDPOP_SEED, preimage)
+    tagged_hash(TAG_ENCPEDPOP_SEED, &preimage).into()
 }
 
 impl ParticipantState for ParticipantInitialState {
@@ -57,16 +65,19 @@ impl ParticipantState for ParticipantInitialState {
         let enc_context = serialize_enc_context(t, &host_pubkeys);
         let simpl_seed = derive_simpl_seed(&self.s, &random, &enc_context);
 
-        let r = scalar_from_bytes(tagged_hash(TAG_ENCPEDPOP_SECNONCE, simpl_seed))?;
+        let r = Zeroizing::new(scalar_from_bytes(tagged_hash(
+            TAG_ENCPEDPOP_SECNONCE,
+            &simpl_seed,
+        ))?);
 
         chill_dkg_ensure!(
-            r != Scalar::ZERO,
+            *r != Scalar::ZERO,
             ChillDkgError::RuntimeError("EncPedPop secret nonce must not be zero".to_owned()),
         );
 
         let polynomial = Polynomial::new(&simpl_seed, t)?;
 
-        let shares: Vec<Scalar> = polynomial.eval_shares(host_pubkeys.len() as u64);
+        let shares = polynomial.eval_shares(host_pubkeys.len() as u64);
 
         let commitment: Vec<ProjectivePoint> = polynomial.commit();
 
@@ -74,13 +85,13 @@ impl ParticipantState for ParticipantInitialState {
             polynomial
                 .coeff(0)
                 .ok_or_else(|| ChillDkgError::RuntimeError("Free term must exist".to_owned()))?
-                .to_owned(),
-            simpl_seed,
+                .as_ref(),
+            &simpl_seed,
             idx as u32,
         )
         .sign()?;
 
-        let pubnonce = ProjectivePoint::GENERATOR * r;
+        let pubnonce = ProjectivePoint::GENERATOR * (*r);
 
         let enc_shares = encrypt(&r, &self.s, &host_pubkeys, &enc_context, idx, &shares)?;
 
@@ -166,7 +177,7 @@ impl ParticipantState for ParticipantStep1State {
         sum_commitment.extend_from_slice(&coordinator_msg.sum_coms_to_nonconst_terms);
 
         let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0])?;
-        secshare += tweak;
+        *secshare += tweak;
 
         let mut sum_commitment_tweaked = sum_commitment.clone();
         sum_commitment_tweaked[0] += pubtweak;
@@ -174,7 +185,7 @@ impl ParticipantState for ParticipantStep1State {
         let pubshare_tweaked = eval_pub_share(&sum_commitment_tweaked, self.idx);
 
         chill_dkg_ensure!(
-            ProjectivePoint::GENERATOR * secshare == pubshare_tweaked,
+            ProjectivePoint::GENERATOR * (*secshare) == pubshare_tweaked,
             ChillDkgError::UnknownFaultyParticipantOrCoordinatorError(
                 "Received invalid secshare, consider investigation procedure to determine faulty party"
                     .to_owned(),
@@ -189,17 +200,24 @@ impl ParticipantState for ParticipantStep1State {
         let transcript = CertEQTranscript::new(
             self.t,
             sum_commitment,
-            self.host_pubkeys,
+            // ParticipantStep1State implements Drop so while this field is not clonable it
+            // can't be moved. Should be possible to optimized by
+            // ```rust
+            //  let mut this = self;
+            //  let host_pubkeys = core::mem::take(&mut this.host_pubkeys);
+            // ```
+            // but the code becomes dusty IMHO
+            self.host_pubkeys.clone(),
             coordinator_msg.pubnonces,
             coordinator_msg.enc_secshares,
         );
 
-        let sig = CertEQSigner::new(self.s, &transcript, self.idx, aux).sign()?;
+        let sig = CertEQSigner::new(&self.s, &transcript, self.idx, aux).sign()?;
 
         let dkg_output = DKGOutput {
             idx: self.idx,
             t: self.t,
-            secshare,
+            secshare: *secshare,
             threshold_pubkey,
             pubshares,
         };

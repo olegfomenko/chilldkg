@@ -51,10 +51,10 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
         idx,
         &transcript.enc_secshares[idx],
     )?;
-    secshare += tweak;
+    *secshare += tweak;
 
     chill_dkg_ensure!(
-        ProjectivePoint::GENERATOR * secshare == pubshares[idx],
+        ProjectivePoint::GENERATOR * (*secshare) == pubshares[idx],
         ChillDkgError::RecoveryDataError(
             "Recovered secret share does not match public share".to_owned()
         ),
@@ -63,7 +63,7 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
     Ok(DKGOutput {
         idx,
         t,
-        secshare,
+        secshare: *secshare,
         threshold_pubkey,
         pubshares,
     })

@@ -1,40 +1,45 @@
 use crate::crypto::tags::TAG_VSS_COEFFS;
-use crate::crypto::{scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, scalar_from_bytes, tagged_hash};
 use crate::errors::Result;
 use k256::{ProjectivePoint, Scalar};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct Polynomial {
     coefficients: Vec<Scalar>,
 }
 
 impl Polynomial {
     pub fn new(seed: &[u8; 32], t: usize) -> Result<Self> {
-        let mut coefficients = Vec::with_capacity(t);
+        let mut poly = Self {
+            coefficients: Vec::with_capacity(t),
+        };
+
+        let mut preimage = Zeroizing::new([0u8; 36]);
+        preimage[0..32].copy_from_slice(seed);
 
         for i in 0..t {
-            let mut preimage = Vec::with_capacity(32 + 4);
-            preimage.extend_from_slice(seed);
-            preimage.extend_from_slice(&(i as u32).to_be_bytes());
-            coefficients.push(scalar_from_bytes(tagged_hash(TAG_VSS_COEFFS, preimage))?);
+            preimage[32..].copy_from_slice(&(i as u32).to_be_bytes());
+            poly.coefficients
+                .push(scalar_from_bytes(tagged_hash(TAG_VSS_COEFFS, &preimage))?);
         }
 
-        Ok(Self { coefficients })
+        Ok(poly)
     }
 
-    pub fn eval(&self, x: Scalar) -> Scalar {
+    fn eval(&self, x: Scalar) -> Scalar {
         self.coefficients
             .iter()
             .rev()
             .fold(Scalar::ZERO, |acc, coefficient| acc * x + coefficient)
     }
 
-    pub fn eval_shares(&self, n: u64) -> Vec<Scalar> {
-        (0u64..n).map(|i| self.eval(Scalar::from(i + 1))).collect()
+    pub fn eval_shares(&self, n: u64) -> Zeroizing<Vec<Scalar>> {
+        Zeroizing::new((0u64..n).map(|i| self.eval(Scalar::from(i + 1))).collect())
     }
 
-    pub fn coeff(&self, i: usize) -> Option<&Scalar> {
-        self.coefficients.get(i)
+    pub fn coeff(&self, i: usize) -> Option<SecretScalar> {
+        self.coefficients.get(i).map(|c| Zeroizing::new(*c))
     }
 
     pub fn commit(&self) -> Vec<ProjectivePoint> {
@@ -68,9 +73,9 @@ mod tests {
             coefficients: vec![scalar(3), scalar(5), scalar(8)],
         };
 
-        assert_eq!(polynomial.coeff(0), Some(&scalar(3)));
-        assert_eq!(polynomial.coeff(1), Some(&scalar(5)));
-        assert_eq!(polynomial.coeff(2), Some(&scalar(8)));
+        assert_eq!(polynomial.coeff(0), Some(Zeroizing::new(scalar(3))));
+        assert_eq!(polynomial.coeff(1), Some(Zeroizing::new(scalar(5))));
+        assert_eq!(polynomial.coeff(2), Some(Zeroizing::new(scalar(8))));
         assert_eq!(polynomial.coeff(3), None);
     }
 
@@ -108,7 +113,7 @@ mod tests {
         };
 
         assert_eq!(
-            polynomial.eval_shares(4),
+            *polynomial.eval_shares(4),
             vec![scalar(10), scalar(27), scalar(54), scalar(91)]
         );
     }
@@ -119,7 +124,7 @@ mod tests {
             coefficients: vec![scalar(3), scalar(2), scalar(5)],
         };
 
-        assert_eq!(polynomial.eval_shares(0), Vec::<Scalar>::new());
+        assert_eq!(*polynomial.eval_shares(0), Vec::<Scalar>::new());
     }
 
     #[test]

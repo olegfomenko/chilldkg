@@ -8,6 +8,7 @@ use crate::party::recovery::recover;
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub mod recovery;
 pub mod transitions;
@@ -20,7 +21,7 @@ pub trait ParticipantState: Sized {
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)>;
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct ParticipantInitialState {
     /// Participant host secret key.
     ///
@@ -30,8 +31,9 @@ pub struct ParticipantInitialState {
 
 impl ParticipantInitialState {
     pub fn new(rng: &mut impl CryptoRngCore) -> Self {
-        let s: Scalar = *NonZeroScalar::random(rng).as_ref();
-        Self { s }
+        Self {
+            s: *NonZeroScalar::random(rng).as_ref(),
+        }
     }
 
     pub fn get_host_key(&self) -> ProjectivePoint {
@@ -44,7 +46,7 @@ impl ParticipantInitialState {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct ParticipantStep1State {
     /// Participant index.
     ///
@@ -77,7 +79,7 @@ pub struct ParticipantStep1State {
     pub com_to_secret: ProjectivePoint,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct DKGOutput {
     /// Participant index.
     ///

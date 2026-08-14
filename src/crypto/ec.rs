@@ -2,12 +2,13 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::tags::TAG_TAP_TWEAK;
-use crate::crypto::{scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, scalar_from_bytes, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::{AffinePoint, ProjectivePoint, Scalar};
+use zeroize::Zeroizing;
 
 pub const X_ONLY_POINT_BYTES_SIZE: usize = 32;
 pub const COMPRESSED_POINT_BYTES_SIZE: usize = 33;
@@ -15,6 +16,7 @@ pub const COMPRESSED_POINT_BYTES_SIZE: usize = 33;
 pub const EC_SCALAR_BYTES_SIZE: usize = 32;
 pub type BIP340XOnlyPubKey = [u8; X_ONLY_POINT_BYTES_SIZE];
 pub type CompressedPubKey = [u8; COMPRESSED_POINT_BYTES_SIZE];
+pub type ScalarBytes = [u8; EC_SCALAR_BYTES_SIZE];
 
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     chill_dkg_ensure!(
@@ -26,15 +28,15 @@ pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scal
 }
 
 /// Serializes x * G as x-only point and returns normalizes scalar as well.
-pub fn compress_scalar_bip340(x: &Scalar) -> (BIP340XOnlyPubKey, Scalar) {
+pub fn compress_scalar_bip340(x: &Scalar) -> (BIP340XOnlyPubKey, SecretScalar) {
     let P = ProjectivePoint::GENERATOR * x;
     let P_x = compress_point_bip340(&P);
 
     // BIP340 key normalization.
     if bool::from(P.to_affine().y_is_odd()) {
-        (P_x, -x)
+        (P_x, Zeroizing::new(x.negate()))
     } else {
-        (P_x, *x)
+        (P_x, Zeroizing::new(*x))
     }
 }
 

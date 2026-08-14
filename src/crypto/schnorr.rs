@@ -5,7 +5,7 @@ use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_point_bip340,
     compress_scalar_bip340, even_y_point,
 };
-use crate::crypto::scalar_from_bytes;
+use crate::crypto::{SecretScalar, scalar_from_bytes};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
@@ -17,11 +17,11 @@ pub type SchnorrSignature = [u8; SCHNORR_SIG_BYTES_SIZE];
 
 pub trait SchnorrSigner {
     fn message(&self) -> &[u8];
-    fn secret_key(&self) -> Scalar;
-    fn x_only_key(&self) -> (BIP340XOnlyPubKey, Scalar) {
+    fn secret_key(&self) -> SecretScalar;
+    fn x_only_key(&self) -> (BIP340XOnlyPubKey, SecretScalar) {
         compress_scalar_bip340(&self.secret_key())
     }
-    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)>;
+    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)>;
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
     fn sign(&self) -> Result<SchnorrSignature> {
         chill_dkg_ensure!(
@@ -32,7 +32,7 @@ pub trait SchnorrSigner {
         let (P_x, d) = self.x_only_key();
         let (R_x, k) = self.x_only_nonce()?;
         let e = self.challenge(&R_x, &P_x)?;
-        let s: [u8; EC_SCALAR_BYTES_SIZE] = (k + e * d).to_bytes().into();
+        let s: [u8; EC_SCALAR_BYTES_SIZE] = ((*k) + e * (*d)).to_bytes().into();
         let mut sig = [0u8; SCHNORR_SIG_BYTES_SIZE];
         sig[..X_ONLY_POINT_BYTES_SIZE].copy_from_slice(&R_x);
         sig[X_ONLY_POINT_BYTES_SIZE..].copy_from_slice(&s);
