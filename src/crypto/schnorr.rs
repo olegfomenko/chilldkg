@@ -21,7 +21,14 @@ pub trait SchnorrSigner {
     fn x_only_key(&self) -> (BIP340XOnlyPubKey, SecretScalar) {
         compress_scalar_bip340(&self.secret_key())
     }
-    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)>;
+    /// x_only_nonce computes nonce value and its commitment which can differ for different
+    /// Schnorr instances. It accepts P_x and d -- a results of x_only_key. It obviously can
+    /// call x_only_key by itself adding one more call and increasing the overall execution time.
+    fn x_only_nonce(
+        &self,
+        P_x: &BIP340XOnlyPubKey,
+        d: &Scalar,
+    ) -> Result<(BIP340XOnlyPubKey, SecretScalar)>;
     fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
     fn sign(&self) -> Result<SchnorrSignature> {
         chill_dkg_ensure!(
@@ -30,7 +37,7 @@ pub trait SchnorrSigner {
         );
 
         let (P_x, d) = self.x_only_key();
-        let (R_x, k) = self.x_only_nonce()?;
+        let (R_x, k) = self.x_only_nonce(&P_x, &d)?;
         let e = self.challenge(&R_x, &P_x)?;
         let s: [u8; EC_SCALAR_BYTES_SIZE] = ((*k) + e * (*d)).to_bytes().into();
         let mut sig = [0u8; SCHNORR_SIG_BYTES_SIZE];

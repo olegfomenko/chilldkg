@@ -234,8 +234,11 @@ impl SchnorrSigner for CertEQSigner {
         Zeroizing::new(self.hostkey)
     }
 
-    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
-        let (p_x, d) = self.x_only_key();
+    fn x_only_nonce(
+        &self,
+        P_x: &BIP340XOnlyPubKey,
+        d: &Scalar,
+    ) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
         let aux_hash = tagged_hash(TAG_BIP340_AUX, self.aux_rand);
 
         let mut t: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
@@ -248,7 +251,7 @@ impl SchnorrSigner for CertEQSigner {
             EC_SCALAR_BYTES_SIZE * 2 + self.message().len(),
         ));
         nonce_preimage.extend_from_slice(t.as_slice());
-        nonce_preimage.extend_from_slice(&p_x);
+        nonce_preimage.extend_from_slice(P_x);
         nonce_preimage.extend_from_slice(self.message());
 
         let k0 = Zeroizing::new(Scalar::reduce(U256::from_be_slice(&tagged_hash(
