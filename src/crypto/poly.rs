@@ -1,5 +1,6 @@
+use crate::crypto::ec::parse_secret_scalar_from_bytes;
 use crate::crypto::tags::TAG_VSS_COEFFS;
-use crate::crypto::{SecretScalar, scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::Result;
 use k256::{ProjectivePoint, Scalar};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -20,8 +21,9 @@ impl Polynomial {
 
         for i in 0..t {
             preimage[32..].copy_from_slice(&(i as u32).to_be_bytes());
+            let preimage_hash = Zeroizing::new(tagged_hash(TAG_VSS_COEFFS, &preimage));
             poly.coefficients
-                .push(scalar_from_bytes(tagged_hash(TAG_VSS_COEFFS, &preimage))?);
+                .push(parse_secret_scalar_from_bytes(preimage_hash)?);
         }
 
         Ok(poly)

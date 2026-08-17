@@ -1,11 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
+use crate::crypto::SecretScalar;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_point_bip340,
-    compress_scalar_bip340, even_y_point,
+    compress_scalar_bip340, even_y_point, parse_scalar_from_bytes,
 };
-use crate::crypto::{SecretScalar, scalar_from_bytes};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
@@ -32,7 +32,7 @@ pub trait SchnorrSigner {
         let (P_x, d) = self.x_only_key();
         let (R_x, k) = self.x_only_nonce()?;
         let e = self.challenge(&R_x, &P_x)?;
-        let s: [u8; EC_SCALAR_BYTES_SIZE] = ((*k) + e * (*d)).to_bytes().into();
+        let s: [u8; EC_SCALAR_BYTES_SIZE] = (k.as_ref() + e * d.as_ref()).to_bytes().into();
         let mut sig = [0u8; SCHNORR_SIG_BYTES_SIZE];
         sig[..X_ONLY_POINT_BYTES_SIZE].copy_from_slice(&R_x);
         sig[X_ONLY_POINT_BYTES_SIZE..].copy_from_slice(&s);
@@ -61,13 +61,12 @@ pub trait SchnorrVerifier {
         );
 
         let r_x: BIP340XOnlyPubKey = sig[..X_ONLY_POINT_BYTES_SIZE].try_into()?;
-        let s_bytes: [u8; EC_SCALAR_BYTES_SIZE] = sig[X_ONLY_POINT_BYTES_SIZE..].try_into()?;
-
-        let s = scalar_from_bytes(s_bytes).map_err(|_| {
-            ChillDkgError::RuntimeError(
-                "Schnorr verification failed: invalid response scalar".to_owned(),
-            )
-        })?;
+        let s: Scalar = parse_scalar_from_bytes(sig[X_ONLY_POINT_BYTES_SIZE..].try_into()?)
+            .map_err(|_| {
+                ChillDkgError::RuntimeError(
+                    "Schnorr verification failed: invalid response scalar".to_owned(),
+                )
+            })?;
 
         let (P, p_x) = self.x_only_pubkey();
         let e = self.challenge(&r_x, &p_x)?;

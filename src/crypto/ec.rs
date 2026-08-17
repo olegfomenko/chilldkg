@@ -2,12 +2,14 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::tags::TAG_TAP_TWEAK;
-use crate::crypto::{SecretScalar, scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::Group;
+use k256::elliptic_curve::ops::Reduce;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use k256::{AffinePoint, ProjectivePoint, Scalar};
+use k256::elliptic_curve::{Group, PrimeField};
+use k256::{AffinePoint, ProjectivePoint, Scalar, U256};
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 pub const X_ONLY_POINT_BYTES_SIZE: usize = 32;
@@ -18,12 +20,43 @@ pub type BIP340XOnlyPubKey = [u8; X_ONLY_POINT_BYTES_SIZE];
 pub type CompressedPubKey = [u8; COMPRESSED_POINT_BYTES_SIZE];
 pub type ScalarBytes = [u8; EC_SCALAR_BYTES_SIZE];
 
+/// parse_scalar_from_bytes parses 32-byte array into Scalar.
+/// Note: Only for public scalars.
+/// Note: It does not reduce by field modulus.
+pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> {
+    let res = Option::<Scalar>::from(Scalar::from_repr(x.into())).ok_or_else(|| {
+        ChillDkgError::RuntimeError("failed to convert 32 byte array into field element".to_owned())
+    })?;
+
+    Ok(res)
+}
+
+/// parse_secret_scalar_from_bytes parses 32-byte array into Scalar.
+/// Compared to parse_scalar_from_bytes it accepts Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>
+/// to make sure that the secret value will be carefully filled with zeros on drop.
+/// Note: It does not reduce by field modulus.
+/// TODO: Unfortunately, i haven't found a way to get rid of passing x by value to Scalar::from_repr
+pub fn parse_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>) -> Result<Scalar> {
+    let res = Option::<Scalar>::from(Scalar::from_repr((*x).into())).ok_or_else(|| {
+        ChillDkgError::RuntimeError("failed to convert 32 byte array into field element".to_owned())
+    })?;
+
+    Ok(res)
+}
+
+/// reduce_secret_scalar_from_bytes parses 32-byte array into Scalar, applying mod n operation,
+/// where n is the field order.
+pub fn reduce_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>) -> SecretScalar {
+    Zeroizing::new(<Scalar as Reduce<U256>>::reduce_bytes(x.as_slice().into()))
+}
+
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     chill_dkg_ensure!(
         !bool::from(p.is_identity()),
         ChillDkgError::RuntimeError("cannot tap tweak identity point".to_owned()),
     );
-    let tweak = scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;
+
+    let tweak = parse_scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;
     Ok((ProjectivePoint::GENERATOR * tweak, tweak))
 }
 
@@ -79,9 +112,16 @@ pub fn eval_pub_share(commitment: &[ProjectivePoint], idx: usize) -> ProjectiveP
     let mut pubshare = ProjectivePoint::IDENTITY;
 
     for C_k in commitment {
-        pubshare += *C_k * x_power;
+        pubshare += C_k * x_power.as_ref();
         x_power *= x;
     }
 
     pubshare
+}
+
+pub fn ecdh(P: &ProjectivePoint, s: &Scalar) -> Zeroizing<[u8; 32]> {
+    let shared_point = Zeroizing::new(P * s);
+    let affine_point = Zeroizing::new(shared_point.to_affine());
+    let encoded_point = Zeroizing::new(affine_point.to_encoded_point(true));
+    Zeroizing::new(Sha256::digest(encoded_point.as_bytes()).into())
 }

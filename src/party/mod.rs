@@ -36,13 +36,17 @@ impl ParticipantInitialState {
         }
     }
 
+    pub fn new_with_secret(scalar: &Scalar) -> Self {
+        Self { s: *scalar }
+    }
+
     pub fn get_host_key(&self) -> ProjectivePoint {
         ProjectivePoint::GENERATOR * self.s
     }
 
     /// Recover this participant's DKG output from successful-session recovery data.
     pub fn recover(&self, recovery_data: &RecoveryData) -> Result<DKGOutput> {
-        recover(self.s, recovery_data)
+        recover(&self.s, recovery_data)
     }
 }
 

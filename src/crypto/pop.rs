@@ -3,7 +3,7 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, X_ONLY_POINT_BYTES_SIZE,
-    compress_scalar_bip340,
+    compress_scalar_bip340, reduce_secret_scalar_from_bytes,
 };
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
@@ -65,8 +65,8 @@ impl SchnorrSigner for PopSigner {
     }
 
     fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
-        let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed);
-        let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
+        let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed.as_slice());
+        let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand.as_slice());
         let (P_x, d) = self.x_only_key();
         let mut t: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
             Zeroizing::new(ScalarBytes::from(d.to_bytes()));
@@ -81,10 +81,8 @@ impl SchnorrSigner for PopSigner {
         nonce_preimage.extend_from_slice(&P_x);
         nonce_preimage.extend_from_slice(self.message());
 
-        let k = Zeroizing::new(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_POP_NONCE,
-            &nonce_preimage,
-        ))));
+        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_POP_NONCE, &nonce_preimage));
+        let k = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(
             !bool::from(k.is_zero()),

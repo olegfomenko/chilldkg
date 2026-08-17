@@ -4,14 +4,14 @@ use crate::chill_dkg_ensure;
 use crate::crypto::certeq::{CertEQSigner, CertEQTranscript, verify_certeq_certificate};
 use crate::crypto::ec::{
     COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default,
-    eval_pub_share, tap_tweak_no_script,
+    eval_pub_share, parse_secret_scalar_from_bytes, tap_tweak_no_script,
 };
 use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::poly::Polynomial;
 use crate::crypto::pop::{PopSigner, PopVerifier};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
+use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
-use crate::crypto::{scalar_from_bytes, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
@@ -65,10 +65,8 @@ impl ParticipantState for ParticipantInitialState {
         let enc_context = serialize_enc_context(t, &host_pubkeys);
         let simpl_seed = derive_simpl_seed(&self.s, &random, &enc_context);
 
-        let r = Zeroizing::new(scalar_from_bytes(tagged_hash(
-            TAG_ENCPEDPOP_SECNONCE,
-            &simpl_seed,
-        ))?);
+        let r_nonce_hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_SECNONCE, &simpl_seed));
+        let r = Zeroizing::new(parse_secret_scalar_from_bytes(r_nonce_hash)?);
 
         chill_dkg_ensure!(
             *r != Scalar::ZERO,
@@ -91,7 +89,7 @@ impl ParticipantState for ParticipantInitialState {
         )
         .sign()?;
 
-        let pubnonce = ProjectivePoint::GENERATOR * (*r);
+        let pubnonce = ProjectivePoint::GENERATOR * r.as_ref();
 
         let enc_shares = encrypt(&r, &self.s, &host_pubkeys, &enc_context, idx, &shares)?;
 
@@ -177,7 +175,7 @@ impl ParticipantState for ParticipantStep1State {
         sum_commitment.extend_from_slice(&coordinator_msg.sum_coms_to_nonconst_terms);
 
         let (pubtweak, tweak) = tap_tweak_no_script(&sum_commitment[0])?;
-        *secshare += tweak;
+        *secshare += tweak.as_ref();
 
         let mut sum_commitment_tweaked = sum_commitment.clone();
         sum_commitment_tweaked[0] += pubtweak;
@@ -185,7 +183,7 @@ impl ParticipantState for ParticipantStep1State {
         let pubshare_tweaked = eval_pub_share(&sum_commitment_tweaked, self.idx);
 
         chill_dkg_ensure!(
-            ProjectivePoint::GENERATOR * (*secshare) == pubshare_tweaked,
+            ProjectivePoint::GENERATOR * secshare.as_ref() == pubshare_tweaked,
             ChillDkgError::UnknownFaultyParticipantOrCoordinatorError(
                 "Received invalid secshare, consider investigation procedure to determine faulty party"
                     .to_owned(),

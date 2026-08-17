@@ -1,5 +1,5 @@
 use chilldkg_rs::crypto::ec::{CompressedPubKey, decompress_default};
-use chilldkg_rs::crypto::scalar_from_bytes;
+use chilldkg_rs::crypto::ec::{EC_SCALAR_BYTES_SIZE, parse_scalar_from_bytes};
 use chilldkg_rs::errors::{ChillDkgError, Result};
 use chilldkg_rs::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
 use k256::elliptic_curve::Group;
@@ -27,7 +27,7 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
         ));
     }
     let enc_shares = (0..enc_share_count)
-        .map(|_| scalar_from_bytes(take(&bytes, &mut offset)))
+        .map(|_| parse_scalar_from_bytes(take::<EC_SCALAR_BYTES_SIZE>(&bytes, &mut offset)))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(ParticipantMsg1 {
@@ -62,7 +62,7 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
     let pops = (0..n).map(|_| take(&bytes, &mut offset)).collect();
     let pubnonce_bytes: Vec<CompressedPubKey> = (0..n).map(|_| take(&bytes, &mut offset)).collect();
     let enc_secshares = (0..n)
-        .map(|_| scalar_from_bytes(take(&bytes, &mut offset)))
+        .map(|_| parse_scalar_from_bytes(take::<EC_SCALAR_BYTES_SIZE>(&bytes, &mut offset)))
         .collect::<Result<Vec<_>>>()?;
 
     if offset != bytes.len() {
@@ -99,7 +99,7 @@ pub fn serialize_recovery_data(recovery_data: &RecoveryData) -> Vec<u8> {
 }
 
 pub fn parse_scalar_hex(hex: &str) -> Result<Scalar> {
-    scalar_from_bytes(parse_hex_array(hex)?)
+    parse_scalar_from_bytes(parse_hex_array::<EC_SCALAR_BYTES_SIZE>(hex)?)
 }
 
 pub fn parse_point_hex(hex: &str) -> Result<ProjectivePoint> {

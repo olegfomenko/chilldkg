@@ -1,9 +1,10 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
+use crate::coordinator::recovery::recover;
 use crate::crypto::certeq::CertEQTranscript;
 use crate::errors::{ChillDkgError, Result};
-use crate::msg::ParticipantMsg1;
+use crate::msg::{ParticipantMsg1, RecoveryData};
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
@@ -110,6 +111,11 @@ impl CoordinatorInitialState {
         }
 
         Ok(())
+    }
+
+    /// Recover coordinator's DKG output from successful-session recovery data.
+    pub fn recover(&self, recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
+        recover(recovery_data)
     }
 }
 

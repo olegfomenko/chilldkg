@@ -11,12 +11,12 @@ use crate::party::{DKGOutput, ParticipantInitialState};
 use k256::{ProjectivePoint, Scalar};
 
 /// Recover this participant's DKG output from successful-session recovery data.
-pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
+pub fn recover(s: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
     let transcript = &recovery_data.transcript;
     let n = transcript.host_pubkeys.len();
     let t = transcript.t;
 
-    let idx = ParticipantInitialState { s }
+    let idx = ParticipantInitialState { s: *s }
         .validate_session_params(&transcript.host_pubkeys, t)
         .map_err(|err| match err {
             ChillDkgError::HostSeckeyError(_) => ChillDkgError::HostSeckeyError(
@@ -45,16 +45,16 @@ pub fn recover(s: Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
 
     let enc_context = serialize_enc_context(t, &transcript.host_pubkeys);
     let mut secshare = decrypt(
-        &s,
+        s,
         &transcript.pubnonces,
         &enc_context,
         idx,
         &transcript.enc_secshares[idx],
     )?;
-    *secshare += tweak;
+    *secshare += tweak.as_ref();
 
     chill_dkg_ensure!(
-        ProjectivePoint::GENERATOR * (*secshare) == pubshares[idx],
+        ProjectivePoint::GENERATOR * secshare.as_ref() == pubshares[idx],
         ChillDkgError::RecoveryDataError(
             "Recovered secret share does not match public share".to_owned()
         ),

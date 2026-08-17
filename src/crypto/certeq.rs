@@ -4,13 +4,14 @@ use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, COMPRESSED_POINT_BYTES_SIZE, CompressedPubKey, EC_SCALAR_BYTES_SIZE,
     ScalarBytes, compress_default, compress_scalar_bip340, decompress_default,
+    parse_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{
     TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
 };
-use crate::crypto::{SecretScalar, scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
@@ -159,11 +160,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             let scalar_bytes: [u8; EC_SCALAR_BYTES_SIZE] =
                 bytes[offset..offset + EC_SCALAR_BYTES_SIZE].try_into()?;
             offset += EC_SCALAR_BYTES_SIZE;
-            enc_secshares.push(
-                scalar_from_bytes(scalar_bytes).map_err(|_| {
-                    ChillDkgError::RuntimeError("invalid enc share scalar".to_owned())
-                })?,
-            );
+            enc_secshares.push(parse_scalar_from_bytes(scalar_bytes)?);
         }
 
         Ok(Self {
@@ -251,10 +248,8 @@ impl SchnorrSigner for CertEQSigner {
         nonce_preimage.extend_from_slice(&p_x);
         nonce_preimage.extend_from_slice(self.message());
 
-        let k0 = Zeroizing::new(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_BIP340_NONCE,
-            &nonce_preimage,
-        ))));
+        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_BIP340_NONCE, &nonce_preimage));
+        let k0 = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(
             !bool::from(k0.is_zero()),
