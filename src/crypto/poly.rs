@@ -52,15 +52,6 @@ impl Polynomial {
     }
 }
 
-impl<'a> IntoIterator for &'a Polynomial {
-    type Item = &'a Scalar;
-    type IntoIter = std::slice::Iter<'a, Scalar>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.coefficients.iter()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
