@@ -55,6 +55,18 @@ High-level flow:
 
 ### Participant States
 
+Each state transition for participant is implemented via
+
+```rust
+pub trait ParticipantState: Sized {
+    type Message;
+    type Next: ParticipantState;
+    type Output;
+
+    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)>;
+}
+```
+
 ```mermaid
 stateDiagram-v2
     [*] --> ParticipantInitialState: new(rng)
@@ -68,7 +80,22 @@ stateDiagram-v2
     Failed --> [*]
 ```
 
+All transitions return `std::result::Result<T, ChillDkgError>`. Validation or protocol failures return
+an error instead of advancing to the next state.
+
 ### Coordinator States
+
+Each state transition for participant is implemented via
+
+```rust
+pub trait CoordinatorState: Sized {
+    type Message;
+    type Next: CoordinatorState;
+    type Output;
+
+    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)>;
+}
+```
 
 ```mermaid
 stateDiagram-v2
@@ -81,7 +108,7 @@ stateDiagram-v2
     Failed --> [*]
 ```
 
-All transitions return `anyhow::Result`. Validation or protocol failures return
+All transitions return `std::result::Result<T, ChillDkgError>`. Validation or protocol failures return
 an error instead of advancing to the next state.
 
 ## Example
@@ -172,6 +199,27 @@ fn main() -> anyhow::Result<()> {
 
 In real use, `random` and `aux_rand` must be fresh 32-byte randomness values.
 The all-zero arrays above are only to keep the example short.
+
+### Recovery
+
+To recover DKG results on the participants side, you have to provide participant's host secret key and recovery data as
+follows:
+
+```rust
+let p_output_recovered: DKGOutput = ParticipantInitialState { s: host_seckeys[i] }
+.recover( & recovery_data)
+.unwrap();
+```
+
+To recover DKG results on the coordinator's side you have to provide recovery data as follows:
+```rust
+let c_output_recovered: CoordinatorDKGOutput = CoordinatorInitialState {
+    t: T, // Threshold
+    host_pubkeys: host_keys, // Participants public keys
+}
+.recover(&recovery_data)
+.unwrap();
+```
 
 ## Tests
 
