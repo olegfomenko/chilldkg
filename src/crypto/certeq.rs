@@ -3,17 +3,19 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, COMPRESSED_POINT_BYTES_SIZE, CompressedPubKey, EC_SCALAR_BYTES_SIZE,
-    compress_default, compress_scalar_bip340, decompress_default,
+    ScalarBytes, compress_default, compress_scalar_bip340, decompress_default,
+    parse_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{
     TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
 };
-use crate::crypto::{scalar_from_bytes, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Certificate-of-equality transcript.
 ///
@@ -158,11 +160,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             let scalar_bytes: [u8; EC_SCALAR_BYTES_SIZE] =
                 bytes[offset..offset + EC_SCALAR_BYTES_SIZE].try_into()?;
             offset += EC_SCALAR_BYTES_SIZE;
-            enc_secshares.push(
-                scalar_from_bytes(scalar_bytes).map_err(|_| {
-                    ChillDkgError::RuntimeError("invalid enc share scalar".to_owned())
-                })?,
-            );
+            enc_secshares.push(parse_scalar_from_bytes(scalar_bytes)?);
         }
 
         Ok(Self {
@@ -201,6 +199,7 @@ pub fn verify_certeq_certificate(
     Ok(())
 }
 
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct CertEQSigner {
     hostkey: Scalar,
     message: Vec<u8>,
@@ -209,14 +208,14 @@ pub struct CertEQSigner {
 
 impl CertEQSigner {
     pub fn new(
-        hostkey: Scalar,
+        hostkey: &Scalar,
         transcript: &CertEQTranscript,
         idx: usize,
         aux_rand: [u8; 32],
     ) -> Self {
         let message = get_certeq_message(transcript, idx);
         CertEQSigner {
-            hostkey,
+            hostkey: *hostkey,
             message,
             aux_rand,
         }
@@ -228,29 +227,29 @@ impl SchnorrSigner for CertEQSigner {
         self.message.as_slice()
     }
 
-    fn secret_key(&self) -> Scalar {
-        self.hostkey
+    fn secret_key(&self) -> SecretScalar {
+        Zeroizing::new(self.hostkey)
     }
 
-    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)> {
+    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
         let (p_x, d) = self.x_only_key();
         let aux_hash = tagged_hash(TAG_BIP340_AUX, self.aux_rand);
 
-        let mut t: [u8; EC_SCALAR_BYTES_SIZE] = d.to_bytes().into();
+        let mut t: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
+            Zeroizing::new(ScalarBytes::from(d.to_bytes()));
         for i in 0..EC_SCALAR_BYTES_SIZE {
             t[i] ^= aux_hash[i];
         }
 
-        let mut nonce_preimage =
-            Vec::with_capacity(EC_SCALAR_BYTES_SIZE * 2 + self.message().len());
-        nonce_preimage.extend_from_slice(&t);
+        let mut nonce_preimage = Zeroizing::new(Vec::with_capacity(
+            EC_SCALAR_BYTES_SIZE * 2 + self.message().len(),
+        ));
+        nonce_preimage.extend_from_slice(t.as_slice());
         nonce_preimage.extend_from_slice(&p_x);
         nonce_preimage.extend_from_slice(self.message());
 
-        let k0 = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_BIP340_NONCE,
-            nonce_preimage,
-        )));
+        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_BIP340_NONCE, &nonce_preimage));
+        let k0 = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(
             !bool::from(k0.is_zero()),

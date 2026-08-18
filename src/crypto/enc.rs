@@ -1,13 +1,15 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, compress_default};
-use crate::crypto::tagged_hash;
+use crate::crypto::ec::{
+    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default, ecdh,
+    reduce_secret_scalar_from_bytes,
+};
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
-use sha2::{Digest, Sha256};
+use k256::{ProjectivePoint, Scalar};
+use zeroize::Zeroizing;
 
 /// ChillDKG ECDH sending pad.
 ///
@@ -19,15 +21,18 @@ use sha2::{Digest, Sha256};
 ///     ecdh_key || R_i || P_j || context
 /// ) mod n
 /// ```
-pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Scalar {
-    let ecdh_bytes = Sha256::digest(compress_default(&(P_j * r_i)));
-    let mut data =
-        Vec::with_capacity(Sha256::output_size() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len());
-    data.extend_from_slice(&ecdh_bytes);
+pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
+    let ecdh_bytes = ecdh(P_j, r_i);
+    let mut data = Zeroizing::new(Vec::with_capacity(
+        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
+    ));
+    data.extend_from_slice(ecdh_bytes.as_slice());
     data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
     data.extend_from_slice(&compress_default(P_j));
     data.extend_from_slice(context);
-    Scalar::reduce(U256::from_be_slice(&tagged_hash(TAG_ENCPEDPOP_ECDH, data)))
+
+    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
+    reduce_secret_scalar_from_bytes(hash)
 }
 
 /// ChillDKG ECDH receiving pad.
@@ -40,15 +45,18 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sca
 ///     ecdh_key || R_j || P_i || context
 /// ) mod n
 /// ```
-pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> Scalar {
-    let ecdh_bytes = Sha256::digest(compress_default(&(R_j * s_i)));
-    let mut data =
-        Vec::with_capacity(Sha256::output_size() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len());
-    data.extend_from_slice(&ecdh_bytes);
+pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
+    let ecdh_bytes = ecdh(R_j, s_i);
+    let mut data = Zeroizing::new(Vec::with_capacity(
+        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
+    ));
+    data.extend_from_slice(ecdh_bytes.as_slice());
     data.extend_from_slice(&compress_default(R_j));
     data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * s_i)));
     data.extend_from_slice(context);
-    Scalar::reduce(U256::from_be_slice(&tagged_hash(TAG_ENCPEDPOP_ECDH, data)))
+
+    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
+    reduce_secret_scalar_from_bytes(hash)
 }
 
 /// ChillDKG self-encryption pad.
@@ -61,19 +69,19 @@ pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> 
 ///     S_i || R_i || ctx_i
 /// ) mod n
 /// ```
-pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> Scalar {
-    let seckey_bytes: [u8; EC_SCALAR_BYTES_SIZE] = s_i.to_bytes().into();
+pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> SecretScalar {
+    let seckey_bytes: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
+        Zeroizing::from(ScalarBytes::from(s_i.to_bytes()));
 
-    let mut data =
-        Vec::with_capacity(EC_SCALAR_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + context.len());
-    data.extend_from_slice(&seckey_bytes);
+    let mut data = Zeroizing::new(Vec::with_capacity(
+        EC_SCALAR_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + context.len(),
+    ));
+    data.extend_from_slice(seckey_bytes.as_slice());
     data.extend_from_slice(&compress_default(R_i));
     data.extend_from_slice(context);
 
-    Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_ENCAPS_MULTI_SELF_PAD,
-        data,
-    )))
+    let hash = Zeroizing::new(tagged_hash(TAG_ENCAPS_MULTI_SELF_PAD, &data));
+    reduce_secret_scalar_from_bytes(hash)
 }
 
 /// Encrypts this participant's VSS shares for all recipients.
@@ -112,7 +120,10 @@ pub fn encrypt(
 
     let mut ciphertexts = Vec::with_capacity(shares.len());
 
-    for (j, (share, P_j)) in shares.iter().copied().zip(P.iter()).enumerate() {
+    for j in 0..P.len() {
+        let share = &shares[j];
+        let P_j = &P[j];
+
         let mut context_j = Vec::with_capacity(4 + context.len());
         context_j.extend_from_slice(&(j as u32).to_be_bytes());
         context_j.extend_from_slice(context);
@@ -123,7 +134,7 @@ pub fn encrypt(
             ecdh_send_pad(r_idx, P_j, &context_j)
         };
 
-        ciphertexts.push(share + pad);
+        ciphertexts.push(share + pad.as_ref());
     }
 
     Ok(ciphertexts)
@@ -147,13 +158,13 @@ pub fn decrypt(
     context: &[u8],
     idx: usize,
     aggr_ciphertexts: &Scalar,
-) -> Result<Scalar> {
+) -> Result<SecretScalar> {
     chill_dkg_ensure!(
         idx < R.len(),
         ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
     );
 
-    let mut aggr_pads = Scalar::ZERO;
+    let mut aggr_pads = Zeroizing::new(Scalar::ZERO);
 
     let mut context_idx = Vec::with_capacity(4 + context.len());
     context_idx.extend_from_slice(&(idx as u32).to_be_bytes());
@@ -166,10 +177,10 @@ pub fn decrypt(
             ecdh_receive_pad(s_idx, R_j, &context_idx)
         };
 
-        aggr_pads += pad;
+        *aggr_pads += pad.as_ref();
     }
 
-    Ok(*aggr_ciphertexts - aggr_pads)
+    Ok(Zeroizing::new(aggr_ciphertexts - aggr_pads.as_ref()))
 }
 
 #[cfg(test)]
@@ -284,7 +295,7 @@ mod tests {
                     &aggregated_ciphertext,
                 )
                 .unwrap(),
-                expected_share
+                Zeroizing::new(expected_share)
             );
         }
     }

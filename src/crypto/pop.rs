@@ -2,15 +2,17 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
-    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_scalar_bip340,
+    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, X_ONLY_POINT_BYTES_SIZE,
+    compress_scalar_bip340, reduce_secret_scalar_from_bytes,
 };
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::Reduce;
 use k256::{ProjectivePoint, Scalar, U256};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Generates Proof of Possession (a Schnorr signature):
 /// 1. Prepare values:
@@ -36,6 +38,7 @@ use k256::{ProjectivePoint, Scalar, U256};
 ///
 /// 6. Serialize result into 64 byte array
 ///    pop = R_x || bytes(s)
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PopSigner {
     a0: Scalar,
     seed: [u8; 32],
@@ -43,10 +46,10 @@ pub struct PopSigner {
 }
 
 impl PopSigner {
-    pub fn new(a0: Scalar, seed: [u8; 32], m: u32) -> Self {
+    pub fn new(a0: &Scalar, seed: &[u8; 32], m: u32) -> Self {
         PopSigner {
-            a0,
-            seed,
+            a0: *a0,
+            seed: *seed,
             message: m.to_be_bytes(),
         }
     }
@@ -57,29 +60,29 @@ impl SchnorrSigner for PopSigner {
         &self.message
     }
 
-    fn secret_key(&self) -> Scalar {
-        self.a0
+    fn secret_key(&self) -> SecretScalar {
+        Zeroizing::new(self.a0)
     }
 
-    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, Scalar)> {
-        let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed);
-        let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand);
+    fn x_only_nonce(&self) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
+        let aux_rand = tagged_hash(TAG_SIMPLPEDPOP_AUX, self.seed.as_slice());
+        let aux_hash = tagged_hash(TAG_POP_AUX, aux_rand.as_slice());
         let (P_x, d) = self.x_only_key();
-        let mut t: [u8; EC_SCALAR_BYTES_SIZE] = d.to_bytes().into();
+        let mut t: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
+            Zeroizing::new(ScalarBytes::from(d.to_bytes()));
         for i in 0..EC_SCALAR_BYTES_SIZE {
             t[i] ^= aux_hash[i];
         }
 
-        let mut nonce_preimage =
-            Vec::with_capacity(EC_SCALAR_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 4);
-        nonce_preimage.extend_from_slice(&t);
+        let mut nonce_preimage = Zeroizing::new(Vec::with_capacity(
+            EC_SCALAR_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 4,
+        ));
+        nonce_preimage.extend_from_slice(t.as_slice());
         nonce_preimage.extend_from_slice(&P_x);
         nonce_preimage.extend_from_slice(self.message());
 
-        let k = Scalar::reduce(U256::from_be_slice(&tagged_hash(
-            TAG_POP_NONCE,
-            nonce_preimage,
-        )));
+        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_POP_NONCE, &nonce_preimage));
+        let k = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(
             !bool::from(k.is_zero()),
@@ -152,16 +155,16 @@ mod tests {
         Scalar::from(value)
     }
 
-    fn sign_pop(seed: [u8; 32], a0: Scalar, idx: u32) -> SchnorrSignature {
+    fn sign_pop(seed: &[u8; 32], a0: &Scalar, idx: u32) -> SchnorrSignature {
         PopSigner::new(a0, seed, idx).sign().unwrap()
     }
 
     #[test]
     fn generated_pop_verifies_for_matching_key_and_index() {
-        let seed = [7u8; 32];
+        let seed = Zeroizing::new([7u8; 32]);
         let a0 = scalar(42);
         let idx = 3;
-        let pop = sign_pop(seed, a0, idx);
+        let pop = sign_pop(&seed, &a0, idx);
 
         PopVerifier::new(ProjectivePoint::GENERATOR * a0, idx)
             .verify(pop)
@@ -170,11 +173,11 @@ mod tests {
 
     #[test]
     fn generated_pop_is_deterministic_for_same_inputs() {
-        let seed = [9u8; 32];
+        let seed = Zeroizing::new([9u8; 32]);
         let a0 = scalar(123);
         let idx = 1;
 
-        assert_eq!(sign_pop(seed, a0, idx), sign_pop(seed, a0, idx));
+        assert_eq!(sign_pop(&seed, &a0, idx), sign_pop(&seed, &a0, idx));
     }
 
     #[test]
@@ -182,14 +185,17 @@ mod tests {
         let a0 = scalar(42);
         let idx = 3;
 
-        assert_ne!(sign_pop([1u8; 32], a0, idx), sign_pop([2u8; 32], a0, idx));
+        assert_ne!(
+            sign_pop(&[1u8; 32], &a0, idx),
+            sign_pop(&[2u8; 32], &a0, idx)
+        );
     }
 
     #[test]
     fn verification_rejects_wrong_index() {
-        let seed = [7u8; 32];
+        let seed = Zeroizing::new([7u8; 32]);
         let a0 = scalar(42);
-        let pop = sign_pop(seed, a0, 3);
+        let pop = sign_pop(&seed, &a0, 3);
 
         assert!(
             PopVerifier::new(ProjectivePoint::GENERATOR * a0, 4)
@@ -200,8 +206,8 @@ mod tests {
 
     #[test]
     fn verification_rejects_wrong_pubkey() {
-        let seed = [7u8; 32];
-        let pop = sign_pop(seed, scalar(42), 3);
+        let seed = Zeroizing::new([7u8; 32]);
+        let pop = sign_pop(&seed, &scalar(42), 3);
         let wrong_pubkey = ProjectivePoint::GENERATOR * scalar(43);
 
         assert!(PopVerifier::new(wrong_pubkey, 3).verify(pop).is_err());
@@ -209,8 +215,8 @@ mod tests {
 
     #[test]
     fn verification_rejects_identity_pubkey() {
-        let seed = [7u8; 32];
-        let pop = sign_pop(seed, scalar(42), 3);
+        let seed = Zeroizing::new([7u8; 32]);
+        let pop = sign_pop(&seed, &scalar(42), 3);
 
         assert!(
             PopVerifier::new(ProjectivePoint::IDENTITY, 3)
@@ -221,9 +227,9 @@ mod tests {
 
     #[test]
     fn verification_rejects_tampered_public_nonce() {
-        let seed = [7u8; 32];
+        let seed = Zeroizing::new([7u8; 32]);
         let a0 = scalar(42);
-        let mut pop = sign_pop(seed, a0, 3);
+        let mut pop = sign_pop(&seed, &a0.clone(), 3);
 
         pop[0] ^= 1;
 
@@ -236,9 +242,9 @@ mod tests {
 
     #[test]
     fn verification_rejects_tampered_response() {
-        let seed = [7u8; 32];
+        let seed = Zeroizing::new([7u8; 32]);
         let a0 = scalar(42);
-        let mut pop = sign_pop(seed, a0, 3);
+        let mut pop = sign_pop(&seed, &a0, 3);
 
         pop[63] ^= 1;
 
@@ -251,8 +257,8 @@ mod tests {
 
     #[test]
     fn signing_rejects_zero_secret() {
-        let seed = [7u8; 32];
+        let seed = Zeroizing::new([7u8; 32]);
 
-        assert!(PopSigner::new(Scalar::ZERO, seed, 0).sign().is_err());
+        assert!(PopSigner::new(&Scalar::ZERO, &seed, 0).sign().is_err());
     }
 }
