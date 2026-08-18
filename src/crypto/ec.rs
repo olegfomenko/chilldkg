@@ -4,7 +4,7 @@ use crate::chill_dkg_ensure;
 use crate::crypto::tags::TAG_TAP_TWEAK;
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
+use k256::elliptic_curve::ops::{LinearCombinationExt, Reduce};
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use k256::elliptic_curve::{Group, PrimeField};
@@ -109,14 +109,14 @@ pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
 pub fn eval_pub_share(commitment: &[ProjectivePoint], idx: usize) -> ProjectivePoint {
     let x = Scalar::from((idx + 1) as u64);
     let mut x_power = Scalar::ONE;
-    let mut pubshare = ProjectivePoint::IDENTITY;
+    let mut points_and_scalars = Vec::with_capacity(commitment.len());
 
     for C_k in commitment {
-        pubshare += C_k * x_power.as_ref();
+        points_and_scalars.push((*C_k, x_power));
         x_power *= x;
     }
 
-    pubshare
+    ProjectivePoint::lincomb_ext(points_and_scalars.as_slice())
 }
 
 pub fn ecdh(P: &ProjectivePoint, s: &Scalar) -> Zeroizing<[u8; 32]> {
