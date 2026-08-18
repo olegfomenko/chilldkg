@@ -13,67 +13,67 @@ macro_rules! chill_dkg_ensure {
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ChillDkgError {
     #[error("ProtocolError")]
-    ProtocolError(String),
+    Protocol(String),
 
     #[error("FaultyParticipantError")]
-    FaultyParticipantError { participant: usize, message: String },
+    FaultyParticipant { participant: usize, message: String },
 
     #[error("FaultyParticipantOrCoordinatorError")]
-    FaultyParticipantOrCoordinatorError { participant: usize, message: String },
+    FaultyParticipantOrCoordinator { participant: usize, message: String },
 
     #[error("FaultyCoordinatorError")]
-    FaultyCoordinatorError(String),
+    FaultyCoordinator(String),
 
     #[error("UnknownFaultyParticipantOrCoordinatorError")]
-    UnknownFaultyParticipantOrCoordinatorError(String),
+    UnknownFaultyParticipantOrCoordinator(String),
 
     #[error("MsgParseError")]
-    MsgParseError(String),
+    MsgParse(String),
 
     #[error("HostSeckeyError")]
-    HostSeckeyError(String),
+    HostSeckey(String),
 
     #[error("SessionParamsError")]
-    SessionParamsError(String),
+    SessionParams(String),
 
     #[error("DuplicateHostPubkeyError")]
-    DuplicateHostPubkeyError {
+    DuplicateHostPubkey {
         participant1: usize,
         participant2: usize,
     },
 
     #[error("InvalidHostPubkeyError")]
-    InvalidHostPubkeyError { participant: usize },
+    InvalidHostPubkey { participant: usize },
 
     #[error("ThresholdOrCountError")]
-    ThresholdOrCountError,
+    ThresholdOrCount,
 
     #[error("RandomnessError")]
-    RandomnessError,
+    Randomness,
 
     #[error("InvalidSignatureInCertificateError")]
-    InvalidSignatureInCertificateError { participant: usize },
+    InvalidSignatureInCertificate { participant: usize },
 
     #[error("RecoveryDataError")]
-    RecoveryDataError(String),
+    RecoveryData(String),
 
     #[error("SecshareSumError")]
-    SecshareSumError(String),
+    SecshareSum(String),
 
     #[error("ValueError")]
-    ValueError(String),
+    Value(String),
 
     #[error("IndexError")]
-    IndexError(String),
+    Index(String),
 
     #[error("RuntimeError")]
-    RuntimeError(String),
+    Runtime(String),
 }
 
 pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
 impl From<TryFromSliceError> for ChillDkgError {
     fn from(e: TryFromSliceError) -> Self {
-        ChillDkgError::RuntimeError(format!("{:?}", e))
+        ChillDkgError::Runtime(format!("{:?}", e))
     }
 }

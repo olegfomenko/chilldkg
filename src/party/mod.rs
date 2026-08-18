@@ -126,19 +126,19 @@ impl ParticipantInitialState {
     fn validate_session_params(&self, host_pubkeys: &[ProjectivePoint], t: usize) -> Result<usize> {
         chill_dkg_ensure!(
             t >= 1 && t <= host_pubkeys.len() && host_pubkeys.len() <= u32::MAX as usize,
-            ChillDkgError::ThresholdOrCountError,
+            ChillDkgError::ThresholdOrCount,
         );
 
         for (i, pubkey) in host_pubkeys.iter().enumerate() {
             chill_dkg_ensure!(
                 !bool::from(pubkey.is_identity()),
-                ChillDkgError::InvalidHostPubkeyError { participant: i },
+                ChillDkgError::InvalidHostPubkey { participant: i },
             );
 
             for (j, other_pubkey) in host_pubkeys.iter().enumerate().skip(i + 1) {
                 chill_dkg_ensure!(
                     pubkey != other_pubkey,
-                    ChillDkgError::DuplicateHostPubkeyError {
+                    ChillDkgError::DuplicateHostPubkey {
                         participant1: i,
                         participant2: j,
                     },
@@ -149,7 +149,7 @@ impl ParticipantInitialState {
         host_pubkeys
             .iter()
             .position(|P_i| *P_i == ProjectivePoint::GENERATOR * self.s)
-            .ok_or(ChillDkgError::HostSeckeyError(
+            .ok_or(ChillDkgError::HostSeckey(
                 "Host secret key does not match any host public key".to_owned(),
             ))
     }
@@ -159,42 +159,42 @@ impl ParticipantStep1State {
     fn validate_coordinator_msg1(&self, coordinator_msg: &CoordinatorMsg1) -> Result<()> {
         chill_dkg_ensure!(
             self.t >= 1,
-            ChillDkgError::FaultyCoordinatorError("DKG threshold must be at least 1".to_owned()),
+            ChillDkgError::FaultyCoordinator("DKG threshold must be at least 1".to_owned()),
         );
         chill_dkg_ensure!(
             coordinator_msg.coms_to_secrets.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator message 1 has invalid number of secret commitments".to_owned()
             ),
         );
         chill_dkg_ensure!(
             coordinator_msg.sum_coms_to_nonconst_terms.len() == self.t - 1,
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator message 1 has invalid number of non-constant commitments".to_owned()
             ),
         );
         chill_dkg_ensure!(
             coordinator_msg.pops.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator message 1 has invalid number of proofs of possession".to_owned()
             ),
         );
         chill_dkg_ensure!(
             coordinator_msg.pubnonces.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator message 1 has invalid number of public nonces".to_owned()
             ),
         );
         chill_dkg_ensure!(
             coordinator_msg.enc_secshares.len() == self.host_pubkeys.len(),
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator message 1 has invalid number of encrypted secret shares".to_owned()
             ),
         );
         for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
             chill_dkg_ensure!(
                 !bool::from(pubnonce.is_identity()),
-                ChillDkgError::FaultyCoordinatorError(format!(
+                ChillDkgError::FaultyCoordinator(format!(
                     "Coordinator message 1 has invalid public nonce at index {i}"
                 )),
             );

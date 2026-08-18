@@ -1,9 +1,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_hex_array, parse_participant_msg1, parse_point_hex, parse_scalar_hex};
-use chilldkg_rs::errors::ChillDkgError::{
-    DuplicateHostPubkeyError, HostSeckeyError, ThresholdOrCountError,
-};
+use chilldkg_rs::errors::ChillDkgError::{DuplicateHostPubkey, HostSeckey, ThresholdOrCount};
 use chilldkg_rs::party::{ParticipantInitialState, ParticipantState};
 
 pub mod common;
@@ -51,7 +49,7 @@ fn test_participant_step1_invalid_threshold() {
     ];
     let initial = ParticipantInitialState { s: hostseckey };
     let err = initial.next((hostpubkeys, 0, random)).err().unwrap();
-    assert_eq!(err, ThresholdOrCountError);
+    assert_eq!(err, ThresholdOrCount);
 }
 
 #[test]
@@ -77,7 +75,7 @@ fn test_participant_step1_duplicate_host_pubkey() {
     let err = initial.next((hostpubkeys, t, random)).err().unwrap();
     assert_eq!(
         err,
-        DuplicateHostPubkeyError {
+        DuplicateHostPubkey {
             participant1: 1,
             participant2: 3
         }
@@ -105,6 +103,6 @@ fn test_participant_step1_host_seckey_mismatch() {
     let err = initial.next((hostpubkeys, t, random)).err().unwrap();
     assert_eq!(
         err,
-        HostSeckeyError("Host secret key does not match any host public key".to_owned())
+        HostSeckey("Host secret key does not match any host public key".to_owned())
     );
 }

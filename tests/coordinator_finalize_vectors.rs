@@ -5,7 +5,7 @@ use crate::common::{
     parse_point_hex, serialize_recovery_data,
 };
 use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
-use chilldkg_rs::errors::ChillDkgError::{FaultyParticipantError, ValueError};
+use chilldkg_rs::errors::ChillDkgError::{FaultyParticipant, Value};
 use chilldkg_rs::msg::ParticipantMsg2;
 
 pub mod common;
@@ -108,7 +108,7 @@ fn test_coordinator_finalize_rejects_invalid_pmsg2_count() {
     let err = next.unwrap().next(pmsgs2).unwrap_err();
     assert_eq!(
         err,
-        ValueError("Coordinator step 2 received invalid number of participant messages".to_owned())
+        Value("Coordinator step 2 received invalid number of participant messages".to_owned())
     );
 }
 
@@ -148,9 +148,9 @@ fn test_coordinator_finalize_rejects_invalid_signature() {
     let err = next.unwrap().next(pmsgs2).unwrap_err();
     assert_eq!(
         err,
-        FaultyParticipantError {
+        FaultyParticipant {
             participant: 1,
-            message: "Participant has provided an invalid signature for the certificate, error = RuntimeError(\"Schnorr verification failed: invalid signature\")".to_owned(),
+            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: invalid signature\")".to_owned(),
         }
     );
 }

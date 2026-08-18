@@ -3,7 +3,7 @@
 use crate::common::{parse_coordinator_msg1, parse_participant_msg1, parse_point_hex};
 use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
 use chilldkg_rs::errors::ChillDkgError::{
-    DuplicateHostPubkeyError, FaultyParticipantError, ThresholdOrCountError,
+    DuplicateHostPubkey, FaultyParticipant, ThresholdOrCount,
 };
 
 pub mod common;
@@ -65,7 +65,7 @@ fn test_coordinator_step1_invalid_threshold() {
 
     let initial = CoordinatorInitialState::new(host_pubkeys, t);
     assert!(initial.is_err());
-    assert_eq!(initial.err().unwrap(), ThresholdOrCountError);
+    assert_eq!(initial.err().unwrap(), ThresholdOrCount);
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn test_coordinator_step1_duplicate() {
     assert!(initial.is_err());
     assert_eq!(
         initial.err().unwrap(),
-        DuplicateHostPubkeyError {
+        DuplicateHostPubkey {
             participant1: 1,
             participant2: 3
         }
@@ -133,7 +133,7 @@ fn test_coordinator_step1_invalid_pmsg1() {
     assert!(result.is_err());
     assert_eq!(
         result.err().unwrap(),
-        FaultyParticipantError {
+        FaultyParticipant {
             participant: 1,
             message: "missing encrypted secret shares".to_owned()
         },

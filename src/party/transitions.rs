@@ -70,7 +70,7 @@ impl ParticipantState for ParticipantInitialState {
 
         chill_dkg_ensure!(
             *r != Scalar::ZERO,
-            ChillDkgError::RuntimeError("EncPedPop secret nonce must not be zero".to_owned()),
+            ChillDkgError::Runtime("EncPedPop secret nonce must not be zero".to_owned()),
         );
 
         let polynomial = Polynomial::new(&simpl_seed, t)?;
@@ -82,7 +82,7 @@ impl ParticipantState for ParticipantInitialState {
         let pop = PopSigner::new(
             polynomial
                 .coeff(0)
-                .ok_or_else(|| ChillDkgError::RuntimeError("Free term must exist".to_owned()))?
+                .ok_or_else(|| ChillDkgError::Runtime("Free term must exist".to_owned()))?
                 .as_ref(),
             &simpl_seed,
             idx as u32,
@@ -126,15 +126,13 @@ impl ParticipantState for ParticipantStep1State {
 
         chill_dkg_ensure!(
             coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
-            ChillDkgError::FaultyCoordinatorError(
+            ChillDkgError::FaultyCoordinator(
                 "Coordinator sent unexpected first group element for local index".to_owned()
             ),
         );
         chill_dkg_ensure!(
             coordinator_msg.pubnonces[self.idx] == self.pubnonce,
-            ChillDkgError::FaultyCoordinatorError(
-                "Coordinator replied with wrong pubnonce".to_owned()
-            ),
+            ChillDkgError::FaultyCoordinator("Coordinator replied with wrong pubnonce".to_owned()),
         );
 
         for i in 0..self.host_pubkeys.len() {
@@ -144,7 +142,7 @@ impl ParticipantState for ParticipantStep1State {
 
             chill_dkg_ensure!(
                 !bool::from(coordinator_msg.coms_to_secrets[i].is_identity()),
-                ChillDkgError::FaultyParticipantOrCoordinatorError {
+                ChillDkgError::FaultyParticipantOrCoordinator {
                     participant: i,
                     message: "Participant sent invalid commitment".to_owned(),
                 },
@@ -154,7 +152,7 @@ impl ParticipantState for ParticipantStep1State {
                 PopVerifier::new(coordinator_msg.coms_to_secrets[i], i as u32)
                     .verify(coordinator_msg.pops[i])
                     .is_ok(),
-                ChillDkgError::FaultyParticipantOrCoordinatorError {
+                ChillDkgError::FaultyParticipantOrCoordinator {
                     participant: i,
                     message: "Participant sent invalid proof-of-knowledge".to_owned(),
                 },
@@ -184,7 +182,7 @@ impl ParticipantState for ParticipantStep1State {
 
         chill_dkg_ensure!(
             ProjectivePoint::GENERATOR * secshare.as_ref() == pubshare_tweaked,
-            ChillDkgError::UnknownFaultyParticipantOrCoordinatorError(
+            ChillDkgError::UnknownFaultyParticipantOrCoordinator(
                 "Received invalid secshare, consider investigation procedure to determine faulty party"
                     .to_owned(),
             ),

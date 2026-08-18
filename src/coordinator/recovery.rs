@@ -11,11 +11,11 @@ pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
     let transcript = &recovery_data.transcript;
 
     CoordinatorInitialState::new(transcript.host_pubkeys.clone(), transcript.t).map_err(|_| {
-        ChillDkgError::RecoveryDataError("Invalid session parameters in recovery data".to_owned())
+        ChillDkgError::RecoveryData("Invalid session parameters in recovery data".to_owned())
     })?;
 
     verify_certeq_certificate(transcript, &recovery_data.cert).map_err(|_| {
-        ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned())
+        ChillDkgError::RecoveryData("Invalid certificate in recovery data".to_owned())
     })?;
 
     let mut sum_commitment = transcript.sum_commitment.clone();

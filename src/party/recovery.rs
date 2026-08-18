@@ -19,17 +19,17 @@ pub fn recover(s: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
     let idx = ParticipantInitialState { s: *s }
         .validate_session_params(&transcript.host_pubkeys, t)
         .map_err(|err| match err {
-            ChillDkgError::HostSeckeyError(_) => ChillDkgError::HostSeckeyError(
+            ChillDkgError::HostSeckey(_) => ChillDkgError::HostSeckey(
                 "Host secret key does not match any host public key in the recovery data"
                     .to_owned(),
             ),
-            _ => ChillDkgError::RecoveryDataError(
+            _ => ChillDkgError::RecoveryData(
                 "Invalid session parameters in recovery data".to_owned(),
             ),
         })?;
 
     verify_certeq_certificate(transcript, &recovery_data.cert).map_err(|_| {
-        ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned())
+        ChillDkgError::RecoveryData("Invalid certificate in recovery data".to_owned())
     })?;
 
     let (pubtweak, tweak) = tap_tweak_no_script(&transcript.sum_commitment[0])?;
@@ -55,7 +55,7 @@ pub fn recover(s: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
 
     chill_dkg_ensure!(
         ProjectivePoint::GENERATOR * secshare.as_ref() == pubshares[idx],
-        ChillDkgError::RecoveryDataError(
+        ChillDkgError::RecoveryData(
             "Recovered secret share does not match public share".to_owned()
         ),
     );

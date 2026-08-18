@@ -86,7 +86,7 @@ impl CoordinatorState for CoordinatorStep1State {
     fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
-            ChillDkgError::ValueError(
+            ChillDkgError::Value(
                 "Coordinator step 2 received invalid number of participant messages".to_owned()
             ),
         );
@@ -99,7 +99,7 @@ impl CoordinatorState for CoordinatorStep1State {
             if let Err(err) =
                 CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
             {
-                return Err(ChillDkgError::FaultyParticipantError {
+                return Err(ChillDkgError::FaultyParticipant {
                     participant: i,
                     message: format!(
                         "Participant has provided an invalid signature for the certificate, error = {:?}",
