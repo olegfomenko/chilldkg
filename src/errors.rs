@@ -12,61 +12,63 @@ macro_rules! chill_dkg_ensure {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ChillDkgError {
-    #[error("ProtocolError")]
+    #[error("protocol error: {0}")]
     Protocol(String),
 
-    #[error("FaultyParticipantError")]
+    #[error("participant {participant} is faulty: {message}")]
     FaultyParticipant { participant: usize, message: String },
 
-    #[error("FaultyParticipantOrCoordinatorError")]
+    #[error("participant {participant} or the coordinator is faulty: {message}")]
     FaultyParticipantOrCoordinator { participant: usize, message: String },
 
-    #[error("FaultyCoordinatorError")]
+    #[error("coordinator is faulty: {0}")]
     FaultyCoordinator(String),
 
-    #[error("UnknownFaultyParticipantOrCoordinatorError")]
+    #[error("unable to identify whether a participant or the coordinator is faulty: {0}")]
     UnknownFaultyParticipantOrCoordinator(String),
 
-    #[error("MsgParseError")]
+    #[error("failed to parse message: {0}")]
     MsgParse(String),
 
-    #[error("HostSeckeyError")]
+    #[error("host secret key error: {0}")]
     HostSeckey(String),
 
-    #[error("SessionParamsError")]
+    #[error("invalid session parameters: {0}")]
     SessionParams(String),
 
-    #[error("DuplicateHostPubkeyError")]
+    #[error("participants {participant1} and {participant2} have duplicate host public keys")]
     DuplicateHostPubkey {
         participant1: usize,
         participant2: usize,
     },
 
-    #[error("InvalidHostPubkeyError")]
+    #[error("participant {participant} has an invalid host public key")]
     InvalidHostPubkey { participant: usize },
 
-    #[error("ThresholdOrCountError")]
+    #[error(
+        "threshold must be between 1 and the participant count, and participant count must not exceed u32::MAX"
+    )]
     ThresholdOrCount,
 
-    #[error("RandomnessError")]
+    #[error("invalid randomness")]
     Randomness,
 
-    #[error("InvalidSignatureInCertificateError")]
+    #[error("participant {participant} has an invalid signature in the certificate")]
     InvalidSignatureInCertificate { participant: usize },
 
-    #[error("RecoveryDataError")]
+    #[error("invalid recovery data: {0}")]
     RecoveryData(String),
 
-    #[error("SecshareSumError")]
+    #[error("invalid secret-share sum: {0}")]
     SecshareSum(String),
 
-    #[error("ValueError")]
+    #[error("invalid value: {0}")]
     Value(String),
 
-    #[error("IndexError")]
+    #[error("invalid index: {0}")]
     Index(String),
 
-    #[error("RuntimeError")]
+    #[error("runtime error: {0}")]
     Runtime(String),
 }
 
