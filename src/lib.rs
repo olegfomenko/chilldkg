@@ -7,13 +7,18 @@ pub mod party;
 #[cfg(test)]
 mod tests {
     use crate::coordinator::{CoordinatorInitialState, CoordinatorState};
+    use crate::crypto::curve::CurvePoint;
+    use crate::crypto::secp256k1::Secp256k1;
     use crate::msg::{ParticipantMsg1, ParticipantMsg2};
     use crate::party::{
         ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
     };
-    use k256::elliptic_curve::sec1::ToEncodedPoint;
     use k256::{ProjectivePoint, Scalar};
     use rand_core::OsRng;
+
+    fn hex(bytes: impl AsRef<[u8]>) -> String {
+        bytes.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+    }
 
     #[test]
     fn success_generate_key() {
@@ -24,7 +29,7 @@ mod tests {
 
         // --------------- INIT PHASE ---------------
 
-        let parties: Vec<ParticipantInitialState> = (0..N)
+        let parties: Vec<ParticipantInitialState<Secp256k1>> = (0..N)
             .map(|_| ParticipantInitialState::new(&mut rng))
             .collect();
 
@@ -32,15 +37,15 @@ mod tests {
 
         let host_keys: Vec<ProjectivePoint> = parties.iter().map(|p| p.get_host_key()).collect();
 
-        let coordinator = CoordinatorInitialState::new(host_keys.clone(), T).unwrap();
+        let coordinator = CoordinatorInitialState::<Secp256k1>::new(host_keys.clone(), T).unwrap();
 
         // --------------- DKG PHASE ---------------
 
         // ---- STEP 1 ----
 
-        let mut msg1: Vec<ParticipantMsg1> = Vec::with_capacity(N);
+        let mut msg1: Vec<ParticipantMsg1<Secp256k1>> = Vec::with_capacity(N);
 
-        let parties: Vec<ParticipantStep1State> = parties
+        let parties: Vec<ParticipantStep1State<Secp256k1>> = parties
             .into_iter()
             .map(|p| {
                 let (next, msg) = p.next((host_keys.clone(), T, [0u8; 32])).unwrap();
@@ -54,9 +59,9 @@ mod tests {
 
         // ---- STEP 2 ----
 
-        let mut msg2: Vec<ParticipantMsg2> = Vec::with_capacity(N);
+        let mut msg2: Vec<ParticipantMsg2<Secp256k1>> = Vec::with_capacity(N);
 
-        let parties: Vec<ParticipantStep2State> = parties
+        let parties: Vec<ParticipantStep2State<Secp256k1>> = parties
             .into_iter()
             .map(|p| {
                 let (next, msg) = p.next((msg1_resp.clone(), [0u8; 32])).unwrap();
@@ -70,7 +75,7 @@ mod tests {
         println!("Coordinator DKG output:");
         println!(
             "\t\tGroup public key {:?}",
-            output.threshold_pubkey.to_encoded_point(true).to_string()
+            hex(output.threshold_pubkey.to_bytes())
         );
         println!("\n\n");
 
@@ -89,17 +94,17 @@ mod tests {
             println!("Participant {} DKG output:", p_output.idx);
             println!(
                 "\t\tGroup public key {:?}",
-                p_output.threshold_pubkey.to_encoded_point(true).to_string()
+                hex(p_output.threshold_pubkey.to_bytes())
             );
-            println!("\t\tSecret share {:x}", p_output.secshare.to_bytes());
+            println!("\t\tSecret share {}", hex(p_output.secshare.to_bytes()));
 
-            let p_output_recovered = ParticipantInitialState { s: host_seckeys[i] }
+            let p_output_recovered = ParticipantInitialState::<Secp256k1> { s: host_seckeys[i] }
                 .recover(&recovery_data)
                 .unwrap();
 
             println!(
-                "\t\tRecovered secret share {:x}",
-                p_output_recovered.secshare.to_bytes()
+                "\t\tRecovered secret share {}",
+                hex(p_output_recovered.secshare.to_bytes())
             );
             println!("\n");
         }

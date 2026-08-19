@@ -13,9 +13,11 @@
 Experimental Rust implementation of the ChillDKG refers to the
 [BlockstreamResearch BIP-FROST-DKG](https://github.com/BlockstreamResearch/bip-frost-dkg).
 
-The crate is built around `k256` secp256k1 scalars and curve points. It exposes
-typed participant and coordinator state machines, plus the lower-level crypto
-building blocks used by the protocol.
+The crate is generic over the underlying elliptic curve: every protocol type and
+operation is parameterized by the `Curve` trait, and `Secp256k1` (backed by
+`k256`) is the instantiation shipped with the crate. It exposes typed participant
+and coordinator state machines, plus the lower-level crypto building blocks used
+by the protocol.
 
 ⚠️ This repository is a work in progress.
 
@@ -23,8 +25,10 @@ building blocks used by the protocol.
 - [x] Tests with reference test vectors.
 - [x] Participant recovery using transcript and secret host key.
 - [x] Coordinator recovery using transcript.
+- [x] Generic curve abstraction with a secp256k1 instantiation.
 - [ ] Malicious behavior investigation.
 - [ ] Messages serialization.
+- [ ] Additional curve instantiations (e.g. ed25519).
 - [ ] Implementation audit.
 
 ## Implementation
@@ -33,6 +37,8 @@ building blocks used by the protocol.
 - `src/coordinator`: coordinator state machine.
 - `src/msg.rs`: typed protocol messages and recovery data.
 - `src/errors.rs`: ChillDKG-style error names.
+- `src/crypto/curve.rs`: the `Curve`, `CurvePoint`, and `CurveScalar` traits the protocol is written against.
+- `src/crypto/secp256k1.rs`: the secp256k1 instantiation of those traits, backed by `k256`.
 - `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, and CertEq helpers.
 - `tests`: unit tests and reference-vector integration tests.
 
@@ -115,6 +121,7 @@ an error instead of advancing to the next state.
 
 ```rust
 use chilldkg::coordinator::{CoordinatorInitialState, CoordinatorState};
+use chilldkg::crypto::secp256k1::Secp256k1;
 use chilldkg::msg::{ParticipantMsg1, ParticipantMsg2};
 use chilldkg::party::{
     ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
@@ -131,7 +138,7 @@ fn main() -> anyhow::Result<()> {
 
     // 1. Prepare params 
 
-    let participants: Vec<_> = (0..N)
+    let participants: Vec<ParticipantInitialState<Secp256k1>> = (0..N)
         .map(|_| ParticipantInitialState::new(&mut rng))
         .collect();
 
@@ -140,12 +147,12 @@ fn main() -> anyhow::Result<()> {
     let host_pubkeys: Vec<ProjectivePoint> =
         participants.iter().map(|p| p.get_host_key()).collect();
 
-    let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
+    let coordinator = CoordinatorInitialState::<Secp256k1>::new(host_pubkeys.clone(), T)?;
 
     // 2. Execute step #1
 
-    let mut pmsg1s: Vec<ParticipantMsg1> = Vec::with_capacity(N);
-    let participants: Vec<ParticipantStep1State> = participants
+    let mut pmsg1s: Vec<ParticipantMsg1<Secp256k1>> = Vec::with_capacity(N);
+    let participants: Vec<ParticipantStep1State<Secp256k1>> = participants
         .into_iter()
         .map(|p| {
             let random = [0u8; 32]; // TODO: generate good randomness 
@@ -160,8 +167,8 @@ fn main() -> anyhow::Result<()> {
 
     // 3. Execute step #2
 
-    let mut pmsg2s: Vec<ParticipantMsg2> = Vec::with_capacity(N);
-    let participants: Vec<ParticipantStep2State> = participants
+    let mut pmsg2s: Vec<ParticipantMsg2<Secp256k1>> = Vec::with_capacity(N);
+    let participants: Vec<ParticipantStep2State<Secp256k1>> = participants
         .into_iter()
         .map(|p| {
             let aux_rand = [1u8; 32];
@@ -206,14 +213,15 @@ To recover DKG results on the participants side, you have to provide participant
 follows:
 
 ```rust
-let p_output_recovered: DKGOutput = ParticipantInitialState { s: host_seckeys[i] }
-.recover( & recovery_data)
-.unwrap();
+let p_output_recovered: DKGOutput<Secp256k1> =
+    ParticipantInitialState::<Secp256k1> { s: host_seckeys[i] }
+        .recover(&recovery_data)
+        .unwrap();
 ```
 
 To recover DKG results on the coordinator's side you have to provide recovery data as follows:
 ```rust
-let c_output_recovered: CoordinatorDKGOutput = CoordinatorInitialState {
+let c_output_recovered: CoordinatorDKGOutput<Secp256k1> = CoordinatorInitialState::<Secp256k1> {
     t: T, // Threshold
     host_pubkeys: host_keys, // Participants public keys
 }
@@ -271,4 +279,7 @@ differences:
 
 - Uppercase local variable names such as `P_i` and `C_k` denote curve points.
 - Lowercase scalar names such as `s`, `r`, and `tweak` denote scalars or ordinary values.
-- The implementation deliberately avoids custom serializers for `k256` types for now.
+- The implementation deliberately avoids custom serializers for curve types for now.
+- Concrete curve types (`k256::ProjectivePoint`, `k256::Scalar`) appear only in
+  `src/crypto/secp256k1.rs` and in tests; the protocol code names `C::Point` and
+  `C::Scalar` instead.

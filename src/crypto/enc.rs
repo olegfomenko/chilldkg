@@ -1,14 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::ec::{
-    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default, ecdh,
-    reduce_secret_scalar_from_bytes,
-};
+use crate::crypto::curve::{Curve, CurvePoint, CurveScalar, ScalarBytes};
+use crate::crypto::ec::{ecdh, reduce_scalar_from_hash};
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::{ProjectivePoint, Scalar};
 use zeroize::Zeroizing;
 
 /// ChillDKG ECDH sending pad.
@@ -21,18 +18,18 @@ use zeroize::Zeroizing;
 ///     ecdh_key || R_i || P_j || context
 /// ) mod n
 /// ```
-pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
-    let ecdh_bytes = ecdh(P_j, r_i);
+pub fn ecdh_send_pad<C: Curve>(r_i: &C::Scalar, P_j: &C::Point, context: &[u8]) -> SecretScalar<C> {
+    let ecdh_bytes = ecdh::<C>(P_j, r_i);
     let mut data = Zeroizing::new(Vec::with_capacity(
-        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
+        ecdh_bytes.as_ref().len() + <C::Point as CurvePoint>::BYTES_SIZE * 2 + context.len(),
     ));
-    data.extend_from_slice(ecdh_bytes.as_slice());
-    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
-    data.extend_from_slice(&compress_default(P_j));
+    data.extend_from_slice(ecdh_bytes.as_ref());
+    data.extend_from_slice((C::Point::GENERATOR * *r_i).to_bytes().as_ref());
+    data.extend_from_slice(P_j.to_bytes().as_ref());
     data.extend_from_slice(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let hash = Zeroizing::new(tagged_hash::<C>(TAG_ENCPEDPOP_ECDH, &data));
+    reduce_scalar_from_hash::<C>(&hash)
 }
 
 /// ChillDKG ECDH receiving pad.
@@ -45,18 +42,22 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sec
 ///     ecdh_key || R_j || P_i || context
 /// ) mod n
 /// ```
-pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
-    let ecdh_bytes = ecdh(R_j, s_i);
+pub fn ecdh_receive_pad<C: Curve>(
+    s_i: &C::Scalar,
+    R_j: &C::Point,
+    context: &[u8],
+) -> SecretScalar<C> {
+    let ecdh_bytes = ecdh::<C>(R_j, s_i);
     let mut data = Zeroizing::new(Vec::with_capacity(
-        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
+        ecdh_bytes.as_ref().len() + <C::Point as CurvePoint>::BYTES_SIZE * 2 + context.len(),
     ));
-    data.extend_from_slice(ecdh_bytes.as_slice());
-    data.extend_from_slice(&compress_default(R_j));
-    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * s_i)));
+    data.extend_from_slice(ecdh_bytes.as_ref());
+    data.extend_from_slice(R_j.to_bytes().as_ref());
+    data.extend_from_slice((C::Point::GENERATOR * *s_i).to_bytes().as_ref());
     data.extend_from_slice(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let hash = Zeroizing::new(tagged_hash::<C>(TAG_ENCPEDPOP_ECDH, &data));
+    reduce_scalar_from_hash::<C>(&hash)
 }
 
 /// ChillDKG self-encryption pad.
@@ -69,19 +70,20 @@ pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> 
 ///     S_i || R_i || ctx_i
 /// ) mod n
 /// ```
-pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> SecretScalar {
-    let seckey_bytes: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
-        Zeroizing::from(ScalarBytes::from(s_i.to_bytes()));
+pub fn self_pad<C: Curve>(s_i: &C::Scalar, R_i: &C::Point, context: &[u8]) -> SecretScalar<C> {
+    let seckey_bytes: Zeroizing<ScalarBytes<C>> = Zeroizing::new(s_i.to_bytes());
 
     let mut data = Zeroizing::new(Vec::with_capacity(
-        EC_SCALAR_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + context.len(),
+        <C::Scalar as CurveScalar>::BYTES_SIZE
+            + <C::Point as CurvePoint>::BYTES_SIZE
+            + context.len(),
     ));
-    data.extend_from_slice(seckey_bytes.as_slice());
-    data.extend_from_slice(&compress_default(R_i));
+    data.extend_from_slice(seckey_bytes.as_ref());
+    data.extend_from_slice(R_i.to_bytes().as_ref());
     data.extend_from_slice(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCAPS_MULTI_SELF_PAD, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let hash = Zeroizing::new(tagged_hash::<C>(TAG_ENCAPS_MULTI_SELF_PAD, &data));
+    reduce_scalar_from_hash::<C>(&hash)
 }
 
 /// Encrypts this participant's VSS shares for all recipients.
@@ -97,14 +99,14 @@ pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> SecretSc
 ///
 ///     ciphertext_j = share_j + pad_{idx,j}
 /// ```
-pub fn encrypt(
-    r_idx: &Scalar,
-    s_idx: &Scalar,
-    P: &[ProjectivePoint],
+pub fn encrypt<C: Curve>(
+    r_idx: &C::Scalar,
+    s_idx: &C::Scalar,
+    P: &[C::Point],
     context: &[u8],
     idx: usize,
-    shares: &[Scalar],
-) -> Result<Vec<Scalar>> {
+    shares: &[C::Scalar],
+) -> Result<Vec<C::Scalar>> {
     chill_dkg_ensure!(
         idx < P.len(),
         ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
@@ -116,7 +118,7 @@ pub fn encrypt(
         ),
     );
 
-    let R_idx = ProjectivePoint::GENERATOR * r_idx;
+    let R_idx = C::Point::GENERATOR * *r_idx;
 
     let mut ciphertexts = Vec::with_capacity(shares.len());
 
@@ -129,12 +131,12 @@ pub fn encrypt(
         context_j.extend_from_slice(context);
 
         let pad = if j == idx {
-            self_pad(s_idx, &R_idx, &context_j)
+            self_pad::<C>(s_idx, &R_idx, &context_j)
         } else {
-            ecdh_send_pad(r_idx, P_j, &context_j)
+            ecdh_send_pad::<C>(r_idx, P_j, &context_j)
         };
 
-        ciphertexts.push(share + pad.as_ref());
+        ciphertexts.push(*share + *pad);
     }
 
     Ok(ciphertexts)
@@ -152,19 +154,19 @@ pub fn encrypt(
 ///
 /// aggr_shares = aggr_ciphertexts - pads
 /// ```
-pub fn decrypt(
-    s_idx: &Scalar,
-    R: &[ProjectivePoint],
+pub fn decrypt<C: Curve>(
+    s_idx: &C::Scalar,
+    R: &[C::Point],
     context: &[u8],
     idx: usize,
-    aggr_ciphertexts: &Scalar,
-) -> Result<SecretScalar> {
+    aggr_ciphertexts: &C::Scalar,
+) -> Result<SecretScalar<C>> {
     chill_dkg_ensure!(
         idx < R.len(),
         ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
     );
 
-    let mut aggr_pads = Zeroizing::new(Scalar::ZERO);
+    let mut aggr_pads: SecretScalar<C> = Zeroizing::new(C::Scalar::ZERO);
 
     let mut context_idx = Vec::with_capacity(4 + context.len());
     context_idx.extend_from_slice(&(idx as u32).to_be_bytes());
@@ -172,20 +174,22 @@ pub fn decrypt(
 
     for (j, R_j) in R.iter().enumerate() {
         let pad = if j == idx {
-            self_pad(s_idx, R_j, &context_idx)
+            self_pad::<C>(s_idx, R_j, &context_idx)
         } else {
-            ecdh_receive_pad(s_idx, R_j, &context_idx)
+            ecdh_receive_pad::<C>(s_idx, R_j, &context_idx)
         };
 
-        *aggr_pads += pad.as_ref();
+        *aggr_pads += *pad;
     }
 
-    Ok(Zeroizing::new(aggr_ciphertexts - aggr_pads.as_ref()))
+    Ok(Zeroizing::new(*aggr_ciphertexts - *aggr_pads))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::secp256k1::Secp256k1;
+    use k256::{ProjectivePoint, Scalar};
 
     fn scalar(value: u64) -> Scalar {
         Scalar::from(value)
@@ -204,8 +208,8 @@ mod tests {
         let context = b"enc-context";
 
         assert_eq!(
-            ecdh_send_pad(&sender_secnonce, &receiver_enckey, context),
-            ecdh_receive_pad(&receiver_deckey, &sender_pubnonce, context)
+            ecdh_send_pad::<Secp256k1>(&sender_secnonce, &receiver_enckey, context),
+            ecdh_receive_pad::<Secp256k1>(&receiver_deckey, &sender_pubnonce, context)
         );
     }
 
@@ -215,8 +219,8 @@ mod tests {
         let receiver_enckey = public_key(scalar(19));
 
         assert_ne!(
-            ecdh_send_pad(&sender_secnonce, &receiver_enckey, b"first-context"),
-            ecdh_send_pad(&sender_secnonce, &receiver_enckey, b"second-context")
+            ecdh_send_pad::<Secp256k1>(&sender_secnonce, &receiver_enckey, b"first-context"),
+            ecdh_send_pad::<Secp256k1>(&sender_secnonce, &receiver_enckey, b"second-context")
         );
     }
 
@@ -225,12 +229,12 @@ mod tests {
         let context = b"enc-context";
 
         assert_ne!(
-            ecdh_send_pad(&scalar(11), &public_key(scalar(19)), context),
-            ecdh_send_pad(&scalar(13), &public_key(scalar(19)), context)
+            ecdh_send_pad::<Secp256k1>(&scalar(11), &public_key(scalar(19)), context),
+            ecdh_send_pad::<Secp256k1>(&scalar(13), &public_key(scalar(19)), context)
         );
         assert_ne!(
-            ecdh_send_pad(&scalar(11), &public_key(scalar(19)), context),
-            ecdh_send_pad(&scalar(11), &public_key(scalar(23)), context)
+            ecdh_send_pad::<Secp256k1>(&scalar(11), &public_key(scalar(19)), context),
+            ecdh_send_pad::<Secp256k1>(&scalar(11), &public_key(scalar(23)), context)
         );
     }
 
@@ -240,12 +244,12 @@ mod tests {
         let pubnonce = public_key(scalar(11));
 
         assert_eq!(
-            self_pad(&deckey, &pubnonce, b"self-context"),
-            self_pad(&deckey, &pubnonce, b"self-context")
+            self_pad::<Secp256k1>(&deckey, &pubnonce, b"self-context"),
+            self_pad::<Secp256k1>(&deckey, &pubnonce, b"self-context")
         );
         assert_ne!(
-            self_pad(&deckey, &pubnonce, b"self-context"),
-            self_pad(&deckey, &pubnonce, b"other-context")
+            self_pad::<Secp256k1>(&deckey, &pubnonce, b"self-context"),
+            self_pad::<Secp256k1>(&deckey, &pubnonce, b"other-context")
         );
     }
 
@@ -266,7 +270,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(idx, sender_shares)| {
-                encrypt(
+                encrypt::<Secp256k1>(
                     &secnonces[idx],
                     &deckeys[idx],
                     &enckeys,
@@ -287,7 +291,7 @@ mod tests {
             });
 
             assert_eq!(
-                decrypt(
+                decrypt::<Secp256k1>(
                     &deckeys[recipient_idx],
                     &pubnonces,
                     context,
@@ -306,8 +310,11 @@ mod tests {
         let deckey = scalar(3);
         let enckeys = vec![public_key(deckey)];
 
-        assert!(encrypt(&secnonce, &deckey, &enckeys, b"context", 1, &[scalar(1)]).is_err());
-        assert!(encrypt(&secnonce, &deckey, &enckeys, b"context", 0, &[]).is_err());
+        assert!(
+            encrypt::<Secp256k1>(&secnonce, &deckey, &enckeys, b"context", 1, &[scalar(1)])
+                .is_err()
+        );
+        assert!(encrypt::<Secp256k1>(&secnonce, &deckey, &enckeys, b"context", 0, &[]).is_err());
     }
 
     #[test]
@@ -315,6 +322,6 @@ mod tests {
         let deckey = scalar(3);
         let pubnonces = vec![public_key(scalar(11))];
 
-        assert!(decrypt(&deckey, &pubnonces, b"context", 1, &scalar(1)).is_err());
+        assert!(decrypt::<Secp256k1>(&deckey, &pubnonces, b"context", 1, &scalar(1)).is_err());
     }
 }

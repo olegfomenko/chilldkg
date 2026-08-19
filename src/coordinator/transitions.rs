@@ -5,26 +5,25 @@ use crate::coordinator::{
     CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
 use crate::crypto::certeq::{CertEQTranscript, CertEQVerifier};
+use crate::crypto::curve::Curve;
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::schnorr::SchnorrVerifier;
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
-use k256::ProjectivePoint;
 
-impl CoordinatorState for CoordinatorInitialState {
-    type Message = Vec<ParticipantMsg1>;
-    type Next = CoordinatorStep1State;
-    type Output = CoordinatorMsg1;
+impl<C: Curve> CoordinatorState for CoordinatorInitialState<C> {
+    type Message = Vec<ParticipantMsg1<C>>;
+    type Next = CoordinatorStep1State<C>;
+    type Output = CoordinatorMsg1<C>;
 
     fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         self.validate_participant_msg1(&msgs)?;
 
-        let coms_to_secrets: Vec<ProjectivePoint> =
-            msgs.iter().map(|msg| msg.commitment[0]).collect();
+        let coms_to_secrets: Vec<C::Point> = msgs.iter().map(|msg| msg.commitment[0]).collect();
 
-        let sum_commitment: Vec<ProjectivePoint> = (0..self.t)
+        let sum_commitment: Vec<C::Point> = (0..self.t)
             .map(|i| msgs.iter().map(|p_msg| p_msg.commitment[i]).sum())
             .collect();
 
@@ -44,13 +43,13 @@ impl CoordinatorState for CoordinatorInitialState {
             enc_secshares,
         };
 
-        let (pubtweak, _) = tap_tweak_no_script(&sum_commitment[0])?;
+        let (pubtweak, _) = tap_tweak_no_script::<C>(&sum_commitment[0])?;
         let mut sum_commitment_tweaked = sum_commitment.clone();
         sum_commitment_tweaked[0] += pubtweak;
 
         let threshold_pubkey = sum_commitment_tweaked[0];
         let pubshares = (0..self.host_pubkeys.len())
-            .map(|i| eval_pub_share(&sum_commitment_tweaked, i))
+            .map(|i| eval_pub_share::<C>(&sum_commitment_tweaked, i))
             .collect();
 
         let transcript = CertEQTranscript::new(
@@ -78,10 +77,10 @@ impl CoordinatorState for CoordinatorInitialState {
     }
 }
 
-impl CoordinatorState for CoordinatorStep1State {
-    type Message = Vec<ParticipantMsg2>;
+impl<C: Curve> CoordinatorState for CoordinatorStep1State<C> {
+    type Message = Vec<ParticipantMsg2<C>>;
     type Next = Self;
-    type Output = (CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData);
+    type Output = (CoordinatorMsg2<C>, CoordinatorDKGOutput<C>, RecoveryData<C>);
 
     fn next(self, msgs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         chill_dkg_ensure!(
@@ -96,8 +95,8 @@ impl CoordinatorState for CoordinatorStep1State {
         };
 
         for i in 0..self.host_pubkeys.len() {
-            if let Err(err) =
-                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
+            if let Err(err) = CertEQVerifier::<C>::new(self.host_pubkeys[i], &self.transcript, i)
+                .verify(msg.cert[i])
             {
                 return Err(ChillDkgError::FaultyParticipantError {
                     participant: i,
