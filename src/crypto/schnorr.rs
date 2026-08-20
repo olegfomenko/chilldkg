@@ -33,7 +33,7 @@ pub trait SchnorrSigner {
     fn sign(&self) -> Result<SchnorrSignature> {
         chill_dkg_ensure!(
             !bool::from(self.secret_key().is_zero()),
-            ChillDkgError::Runtime("Schnorr signing failed: secret key is zero".to_owned()),
+            ChillDkgError::Runtime("Schnorr signing failed: secret key is zero".into()),
         );
 
         let (P_x, d) = self.x_only_key();
@@ -62,16 +62,14 @@ pub trait SchnorrVerifier {
     fn verify(&self, sig: SchnorrSignature) -> Result<()> {
         chill_dkg_ensure!(
             !bool::from(self.pub_key().is_identity()),
-            ChillDkgError::Runtime(
-                "Schnorr verification failed: public key is identity".to_owned()
-            ),
+            ChillDkgError::Runtime("Schnorr verification failed: public key is identity".into()),
         );
 
         let r_x: BIP340XOnlyPubKey = sig[..X_ONLY_POINT_BYTES_SIZE].try_into()?;
         let s: Scalar = parse_scalar_from_bytes(sig[X_ONLY_POINT_BYTES_SIZE..].try_into()?)
             .map_err(|_| {
                 ChillDkgError::Runtime(
-                    "Schnorr verification failed: invalid response scalar".to_owned(),
+                    "Schnorr verification failed: invalid response scalar".into(),
                 )
             })?;
 
@@ -81,19 +79,19 @@ pub trait SchnorrVerifier {
         let R = ProjectivePoint::GENERATOR * s - P * e;
         chill_dkg_ensure!(
             !bool::from(R.is_identity()),
-            ChillDkgError::Runtime("Schnorr verification failed: nonce is identity".to_owned()),
+            ChillDkgError::Runtime("Schnorr verification failed: nonce is identity".into()),
         );
 
         let R = R.to_affine();
         chill_dkg_ensure!(
             !bool::from(R.y_is_odd()),
-            ChillDkgError::Runtime("Schnorr verification failed: nonce has odd Y".to_owned()),
+            ChillDkgError::Runtime("Schnorr verification failed: nonce has odd Y".into()),
         );
 
         let computed_r_x: [u8; X_ONLY_POINT_BYTES_SIZE] = R.x().into();
         if computed_r_x != r_x {
             return Err(ChillDkgError::Runtime(
-                "Schnorr verification failed: invalid signature".to_owned(),
+                "Schnorr verification failed: invalid signature".into(),
             ));
         }
 

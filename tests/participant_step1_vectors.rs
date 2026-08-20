@@ -103,6 +103,6 @@ fn test_participant_step1_host_seckey_mismatch() {
     let err = initial.next((hostpubkeys, t, random)).err().unwrap();
     assert_eq!(
         err,
-        HostSeckey("Host secret key does not match any host public key".to_owned())
+        HostSeckey("Host secret key does not match any host public key".into())
     );
 }

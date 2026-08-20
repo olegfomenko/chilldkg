@@ -20,17 +20,13 @@ pub fn recover(s: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
         .validate_session_params(&transcript.host_pubkeys, t)
         .map_err(|err| match err {
             ChillDkgError::HostSeckey(_) => ChillDkgError::HostSeckey(
-                "Host secret key does not match any host public key in the recovery data"
-                    .to_owned(),
+                "Host secret key does not match any host public key in the recovery data".into(),
             ),
-            _ => ChillDkgError::RecoveryData(
-                "Invalid session parameters in recovery data".to_owned(),
-            ),
+            _ => ChillDkgError::RecoveryData("Invalid session parameters in recovery data".into()),
         })?;
 
-    verify_certeq_certificate(transcript, &recovery_data.cert).map_err(|_| {
-        ChillDkgError::RecoveryData("Invalid certificate in recovery data".to_owned())
-    })?;
+    verify_certeq_certificate(transcript, &recovery_data.cert)
+        .map_err(|_| ChillDkgError::RecoveryData("Invalid certificate in recovery data".into()))?;
 
     let (pubtweak, tweak) = tap_tweak_no_script(&transcript.sum_commitment[0])?;
 
@@ -55,9 +51,7 @@ pub fn recover(s: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
 
     chill_dkg_ensure!(
         ProjectivePoint::GENERATOR * secshare.as_ref() == pubshares[idx],
-        ChillDkgError::RecoveryData(
-            "Recovered secret share does not match public share".to_owned()
-        ),
+        ChillDkgError::RecoveryData("Recovered secret share does not match public share".into()),
     );
 
     Ok(DKGOutput {

@@ -104,10 +104,7 @@ fn test_participant_finalize_rejects_short_certificate() {
     let (next, actual_pmsg2) = next.unwrap().next((cmsg1, aux_rand)).unwrap();
     assert_eq!(actual_pmsg2, pmsg2);
     let err = next.unwrap().next(cmsg2).err().unwrap();
-    assert_eq!(
-        err,
-        FaultyCoordinator("invalid certificate length".to_owned())
-    );
+    assert_eq!(err, FaultyCoordinator("invalid certificate length".into()));
 }
 
 #[test]
@@ -148,7 +145,7 @@ fn test_participant_finalize_rejects_invalid_signature() {
         err,
         FaultyParticipantOrCoordinator {
             participant: 2,
-            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: nonce has odd Y\")".to_owned(),
+            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: nonce has odd Y\")".into(),
         }
     );
 }

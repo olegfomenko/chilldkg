@@ -1,4 +1,5 @@
 use std::array::TryFromSliceError;
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[macro_export]
@@ -13,28 +14,34 @@ macro_rules! chill_dkg_ensure {
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ChillDkgError {
     #[error("protocol error: {0}")]
-    Protocol(String),
+    Protocol(Cow<'static, str>),
 
     #[error("participant {participant} is faulty: {message}")]
-    FaultyParticipant { participant: usize, message: String },
+    FaultyParticipant {
+        participant: usize,
+        message: Cow<'static, str>,
+    },
 
     #[error("participant {participant} or the coordinator is faulty: {message}")]
-    FaultyParticipantOrCoordinator { participant: usize, message: String },
+    FaultyParticipantOrCoordinator {
+        participant: usize,
+        message: Cow<'static, str>,
+    },
 
     #[error("coordinator is faulty: {0}")]
-    FaultyCoordinator(String),
+    FaultyCoordinator(Cow<'static, str>),
 
     #[error("unable to identify whether a participant or the coordinator is faulty: {0}")]
-    UnknownFaultyParticipantOrCoordinator(String),
+    UnknownFaultyParticipantOrCoordinator(Cow<'static, str>),
 
     #[error("failed to parse message: {0}")]
-    MsgParse(String),
+    MsgParse(Cow<'static, str>),
 
     #[error("host secret key error: {0}")]
-    HostSeckey(String),
+    HostSeckey(Cow<'static, str>),
 
     #[error("invalid session parameters: {0}")]
-    SessionParams(String),
+    SessionParams(Cow<'static, str>),
 
     #[error("participants {participant1} and {participant2} have duplicate host public keys")]
     DuplicateHostPubkey {
@@ -57,25 +64,25 @@ pub enum ChillDkgError {
     InvalidSignatureInCertificate { participant: usize },
 
     #[error("invalid recovery data: {0}")]
-    RecoveryData(String),
+    RecoveryData(Cow<'static, str>),
 
     #[error("invalid secret-share sum: {0}")]
-    SecshareSum(String),
+    SecshareSum(Cow<'static, str>),
 
     #[error("invalid value: {0}")]
-    Value(String),
+    Value(Cow<'static, str>),
 
     #[error("invalid index: {0}")]
-    Index(String),
+    Index(Cow<'static, str>),
 
     #[error("runtime error: {0}")]
-    Runtime(String),
+    Runtime(Cow<'static, str>),
 }
 
 pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
 impl From<TryFromSliceError> for ChillDkgError {
     fn from(e: TryFromSliceError) -> Self {
-        ChillDkgError::Runtime(format!("{:?}", e))
+        ChillDkgError::Runtime(format!("{:?}", e).into())
     }
 }

@@ -9,7 +9,7 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
     let bytes = decode(hex)?;
     let fixed_len = 33 * t + 64 + 33;
     if bytes.len() < fixed_len || !(bytes.len() - fixed_len).is_multiple_of(32) {
-        return Err(ChillDkgError::Runtime("invalid pmsg1 length".to_owned()));
+        return Err(ChillDkgError::Runtime("invalid pmsg1 length".into()));
     }
 
     let mut offset = 0;
@@ -20,7 +20,7 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
     let pubnonce = parse_point(take(&bytes, &mut offset))?;
     let enc_share_count = (bytes.len() - offset) / 32;
     if enc_share_count > n {
-        return Err(ChillDkgError::Runtime("invalid pmsg1 length".to_owned()));
+        return Err(ChillDkgError::Runtime("invalid pmsg1 length".into()));
     }
     let enc_shares = (0..enc_share_count)
         .map(|_| parse_scalar_from_bytes(take::<EC_SCALAR_BYTES_SIZE>(&bytes, &mut offset)))
@@ -44,7 +44,7 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
         || bytes.len() - 33 * n - 33 * (t - 1) - 64 * n < 33 * n
         || bytes.len() - 33 * n - 33 * (t - 1) - 64 * n - 33 * n < 32 * n
     {
-        return Err(ChillDkgError::Runtime("invalid cmsg1 length".to_owned()));
+        return Err(ChillDkgError::Runtime("invalid cmsg1 length".into()));
     }
 
     let coms_to_secrets = (0..n)
@@ -61,7 +61,7 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
 
     if offset != bytes.len() {
         return Err(ChillDkgError::Runtime(
-            "incorrect input bytes length".to_owned(),
+            "incorrect input bytes length".into(),
         ));
     }
 
@@ -103,18 +103,18 @@ pub fn parse_point_hex(hex: &str) -> Result<ProjectivePoint> {
 pub fn parse_hex_array<const N: usize>(hex: &str) -> Result<[u8; N]> {
     decode(hex)?
         .try_into()
-        .map_err(|_| ChillDkgError::Runtime("invalid hex length".to_owned()))
+        .map_err(|_| ChillDkgError::Runtime("invalid hex length".into()))
 }
 
 fn decode(hex: &str) -> Result<Vec<u8>> {
-    hex::decode(hex).map_err(|err| ChillDkgError::Runtime(err.to_string()))
+    hex::decode(hex).map_err(|err| ChillDkgError::Runtime(err.to_string().into()))
 }
 
 fn parse_point(bytes: CompressedPubKey) -> Result<ProjectivePoint> {
     let point = decompress_default(&bytes)
-        .ok_or_else(|| ChillDkgError::Runtime("invalid compressed point".to_owned()))?;
+        .ok_or_else(|| ChillDkgError::Runtime("invalid compressed point".into()))?;
     if bool::from(point.is_identity()) {
-        Err(ChillDkgError::Runtime("point is identity".to_owned()))
+        Err(ChillDkgError::Runtime("point is identity".into()))
     } else {
         Ok(point)
     }

@@ -108,7 +108,7 @@ fn test_coordinator_finalize_rejects_invalid_pmsg2_count() {
     let err = next.unwrap().next(pmsgs2).unwrap_err();
     assert_eq!(
         err,
-        Value("Coordinator step 2 received invalid number of participant messages".to_owned())
+        Value("Coordinator step 2 received invalid number of participant messages".into())
     );
 }
 
@@ -150,7 +150,7 @@ fn test_coordinator_finalize_rejects_invalid_signature() {
         err,
         FaultyParticipant {
             participant: 1,
-            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: invalid signature\")".to_owned(),
+            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: invalid signature\")".into(),
         }
     );
 }

@@ -87,7 +87,7 @@ impl CoordinatorState for CoordinatorStep1State {
         chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
             ChillDkgError::Value(
-                "Coordinator step 2 received invalid number of participant messages".to_owned()
+                "Coordinator step 2 received invalid number of participant messages".into()
             ),
         );
 
@@ -104,7 +104,7 @@ impl CoordinatorState for CoordinatorStep1State {
                     message: format!(
                         "Participant has provided an invalid signature for the certificate, error = {:?}",
                         err
-                    ),
+                    ).into(),
                 });
             }
         }

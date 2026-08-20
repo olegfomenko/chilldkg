@@ -135,7 +135,7 @@ fn test_coordinator_step1_invalid_pmsg1() {
         result.err().unwrap(),
         FaultyParticipant {
             participant: 1,
-            message: "missing encrypted secret shares".to_owned()
+            message: "missing encrypted secret shares".into()
         },
     );
 }
