@@ -107,7 +107,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
     fn try_from((bytes, n): (&[u8], usize)) -> std::result::Result<Self, Self::Error> {
         chill_dkg_ensure!(
             bytes.len() >= 4,
-            ChillDkgError::RuntimeError("invalid CertEq transcript length".to_owned()),
+            ChillDkgError::Runtime("invalid CertEq transcript length".into()),
         );
 
         let t = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
@@ -118,7 +118,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
                         + COMPRESSED_POINT_BYTES_SIZE
                         + EC_SCALAR_BYTES_SIZE)
                         * n,
-            ChillDkgError::RuntimeError("invalid CertEq transcript length".to_owned()),
+            ChillDkgError::Runtime("invalid CertEq transcript length".into()),
         );
 
         let mut offset = 4;
@@ -132,9 +132,10 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             let compressed: &CompressedPubKey =
                 (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
             offset += COMPRESSED_POINT_BYTES_SIZE;
-            sum_commitment.push(decompress_default(compressed).ok_or_else(|| {
-                ChillDkgError::RuntimeError("invalid commitment point".to_owned())
-            })?);
+            sum_commitment.push(
+                decompress_default(compressed)
+                    .ok_or_else(|| ChillDkgError::Runtime("invalid commitment point".into()))?,
+            );
         }
 
         for i in 0..n {
@@ -143,7 +144,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             offset += COMPRESSED_POINT_BYTES_SIZE;
             host_pubkeys.push(
                 decompress_default(compressed)
-                    .ok_or(ChillDkgError::InvalidHostPubkeyError { participant: i })?,
+                    .ok_or(ChillDkgError::InvalidHostPubkey { participant: i })?,
             );
         }
 
@@ -151,9 +152,10 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             let compressed: &CompressedPubKey =
                 (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
             offset += COMPRESSED_POINT_BYTES_SIZE;
-            pubnonces.push(decompress_default(compressed).ok_or_else(|| {
-                ChillDkgError::RuntimeError("invalid public nonce point".to_owned())
-            })?);
+            pubnonces.push(
+                decompress_default(compressed)
+                    .ok_or_else(|| ChillDkgError::Runtime("invalid public nonce point".into()))?,
+            );
         }
 
         for _ in 0..n {
@@ -181,17 +183,17 @@ pub fn verify_certeq_certificate(
 
     chill_dkg_ensure!(
         cert.len() == host_pubkeys.len(),
-        ChillDkgError::FaultyCoordinatorError("invalid certificate length".to_owned(),),
+        ChillDkgError::FaultyCoordinator("invalid certificate length".into(),),
     );
 
     for i in 0..host_pubkeys.len() {
         if let Err(err) = CertEQVerifier::new(host_pubkeys[i], transcript, i).verify(cert[i]) {
-            return Err(ChillDkgError::FaultyParticipantOrCoordinatorError {
+            return Err(ChillDkgError::FaultyParticipantOrCoordinator {
                 participant: i,
                 message: format!(
                     "Participant has provided an invalid signature for the certificate, error = {:?}",
                     err
-                ),
+                ).into(),
             });
         }
     }
@@ -256,7 +258,7 @@ impl SchnorrSigner for CertEQSigner {
 
         chill_dkg_ensure!(
             !bool::from(k0.is_zero()),
-            ChillDkgError::RuntimeError("CertEq signing failed: BIP340: nonce is zero".to_owned()),
+            ChillDkgError::Runtime("CertEq signing failed: BIP340: nonce is zero".into()),
         );
 
         Ok(compress_scalar_bip340(&k0))

@@ -80,36 +80,32 @@ fn test_recover_rejects_malformed_data() {
         (
             recovery_data[2..].to_string(),
             threshold,
-            ChillDkgError::RecoveryDataError("Failed to deserialize recovery data".to_owned()),
+            ChillDkgError::RecoveryData("Failed to deserialize recovery data".into()),
         ),
         (
             replace_bytes(recovery_data, 4, invalid_compressed_point),
             threshold,
-            ChillDkgError::RecoveryDataError("Failed to deserialize recovery data".to_owned()),
+            ChillDkgError::RecoveryData("Failed to deserialize recovery data".into()),
         ),
         (
             replace_bytes(recovery_data, 332, invalid_scalar),
             threshold,
-            ChillDkgError::RecoveryDataError("Failed to deserialize recovery data".to_owned()),
+            ChillDkgError::RecoveryData("Failed to deserialize recovery data".into()),
         ),
         (
             remove_bytes(&replace_bytes(recovery_data, 0, "00000000"), 4, 66),
             0,
-            ChillDkgError::RecoveryDataError(
-                "Invalid session parameters in recovery data".to_owned(),
-            ),
+            ChillDkgError::RecoveryData("Invalid session parameters in recovery data".into()),
         ),
         (
             replace_bytes(recovery_data, 70, invalid_compressed_point),
             threshold,
-            ChillDkgError::RecoveryDataError(
-                "Invalid session parameters in recovery data".to_owned(),
-            ),
+            ChillDkgError::RecoveryData("Invalid session parameters in recovery data".into()),
         ),
         (
             replace_bytes(recovery_data, 235, tampered_pubnonce),
             threshold,
-            ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned()),
+            ChillDkgError::RecoveryData("Invalid certificate in recovery data".into()),
         ),
         (
             format!(
@@ -118,7 +114,7 @@ fn test_recover_rejects_malformed_data() {
                 invalid_pmsg2
             ),
             threshold,
-            ChillDkgError::RecoveryDataError("Invalid certificate in recovery data".to_owned()),
+            ChillDkgError::RecoveryData("Invalid certificate in recovery data".into()),
         ),
     ] {
         let err = split_recovery_data(&recovery_data, threshold, n)
@@ -140,31 +136,31 @@ fn test_participant_recover_rejects_host_seckey_mismatch() {
         .unwrap();
     assert_eq!(
         err,
-        ChillDkgError::HostSeckeyError(
-            "Host secret key does not match any host public key in the recovery data".to_owned()
+        ChillDkgError::HostSeckey(
+            "Host secret key does not match any host public key in the recovery data".into()
         )
     );
 }
 
 fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<RecoveryData> {
-    let bytes = hex::decode(hex).map_err(|err| ChillDkgError::RuntimeError(err.to_string()))?;
+    let bytes = hex::decode(hex).map_err(|err| ChillDkgError::Runtime(err.to_string().into()))?;
     let transcript_len = 4
         + COMPRESSED_POINT_BYTES_SIZE * threshold
         + (COMPRESSED_POINT_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + EC_SCALAR_BYTES_SIZE) * n;
     let cert_len = SCHNORR_SIG_BYTES_SIZE * n;
 
     if bytes.len() != transcript_len + cert_len {
-        return Err(ChillDkgError::RecoveryDataError(
-            "Failed to deserialize recovery data".to_owned(),
+        return Err(ChillDkgError::RecoveryData(
+            "Failed to deserialize recovery data".into(),
         ));
     }
 
     let transcript = CertEQTranscript::try_from((&bytes[..transcript_len], n)).map_err(|err| {
-        ChillDkgError::RecoveryDataError(match err {
-            ChillDkgError::InvalidHostPubkeyError { .. } => {
-                "Invalid session parameters in recovery data".to_owned()
+        ChillDkgError::RecoveryData(match err {
+            ChillDkgError::InvalidHostPubkey { .. } => {
+                "Invalid session parameters in recovery data".into()
             }
-            _ => "Failed to deserialize recovery data".to_owned(),
+            _ => "Failed to deserialize recovery data".into(),
         })
     })?;
 

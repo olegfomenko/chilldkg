@@ -89,7 +89,7 @@ impl SchnorrSigner for PopSigner {
 
         chill_dkg_ensure!(
             !bool::from(k.is_zero()),
-            ChillDkgError::RuntimeError("PoP generation failed: BIP340: nonce is zero".to_owned()),
+            ChillDkgError::Runtime("PoP generation failed: BIP340: nonce is zero".into()),
         );
 
         Ok(compress_scalar_bip340(&k))

@@ -43,19 +43,19 @@ impl CoordinatorInitialState {
             self.t >= 1
                 && self.t <= self.host_pubkeys.len()
                 && self.host_pubkeys.len() <= u32::MAX as usize,
-            ChillDkgError::ThresholdOrCountError,
+            ChillDkgError::ThresholdOrCount,
         );
 
         for (i, P_i) in self.host_pubkeys.iter().enumerate() {
             chill_dkg_ensure!(
                 !bool::from(P_i.is_identity()),
-                ChillDkgError::InvalidHostPubkeyError { participant: i },
+                ChillDkgError::InvalidHostPubkey { participant: i },
             );
 
             for (j, P_j) in self.host_pubkeys.iter().enumerate().skip(i + 1) {
                 chill_dkg_ensure!(
                     P_i != P_j,
-                    ChillDkgError::DuplicateHostPubkeyError {
+                    ChillDkgError::DuplicateHostPubkey {
                         participant1: i,
                         participant2: j,
                     },
@@ -69,42 +69,43 @@ impl CoordinatorInitialState {
     fn validate_participant_msg1(&self, msgs: &[ParticipantMsg1]) -> Result<()> {
         chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
-            ChillDkgError::ValueError(
-                "Coordinator step 1 received invalid number of participant messages".to_owned()
+            ChillDkgError::Value(
+                "Coordinator step 1 received invalid number of participant messages".into()
             ),
         );
 
         for (i, p_msg) in msgs.iter().enumerate() {
             chill_dkg_ensure!(
                 p_msg.commitment.len() == self.t,
-                ChillDkgError::FaultyParticipantError {
+                ChillDkgError::FaultyParticipant {
                     participant: i,
-                    message: "Participant sent invalid number of VSS commitments".to_owned(),
+                    message: "Participant sent invalid number of VSS commitments".into(),
                 },
             );
             chill_dkg_ensure!(
                 p_msg.enc_shares.len() == self.host_pubkeys.len(),
-                ChillDkgError::FaultyParticipantError {
+                ChillDkgError::FaultyParticipant {
                     participant: i,
-                    message: "missing encrypted secret shares".to_owned(),
+                    message: "missing encrypted secret shares".into(),
                 },
             );
             chill_dkg_ensure!(
                 !bool::from(p_msg.pubnonce.is_identity()),
-                ChillDkgError::FaultyParticipantError {
+                ChillDkgError::FaultyParticipant {
                     participant: i,
-                    message: "Participant sent invalid public nonce".to_owned(),
+                    message: "Participant sent invalid public nonce".into(),
                 },
             );
 
             for (k, C_k) in p_msg.commitment.iter().enumerate() {
                 chill_dkg_ensure!(
                     !bool::from(C_k.is_identity()),
-                    ChillDkgError::FaultyParticipantError {
+                    ChillDkgError::FaultyParticipant {
                         participant: i,
                         message: format!(
                             "Participant sent invalid VSS commitment at coefficient {k}"
-                        ),
+                        )
+                        .into(),
                     },
                 );
             }
