@@ -2,12 +2,11 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
+use crate::crypto::curve::{Curve, CurvePoint, CurveScalar};
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::party::recovery::recover;
-use k256::elliptic_curve::Group;
-use k256::elliptic_curve::rand_core::CryptoRngCore;
-use k256::{NonZeroScalar, ProjectivePoint, Scalar};
+use rand_core::CryptoRngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub mod recovery;
@@ -22,36 +21,36 @@ pub trait ParticipantState: Sized {
 }
 
 #[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct ParticipantInitialState {
+pub struct ParticipantInitialState<C: Curve> {
     /// Participant host secret key.
     ///
     /// Math: `s_i`.
-    pub s: Scalar,
+    pub s: C::Scalar,
 }
 
-impl ParticipantInitialState {
+impl<C: Curve> ParticipantInitialState<C> {
     pub fn new(rng: &mut impl CryptoRngCore) -> Self {
         Self {
-            s: *NonZeroScalar::random(rng).as_ref(),
+            s: C::Scalar::random_non_zero(rng),
         }
     }
 
-    pub fn new_with_secret(scalar: &Scalar) -> Self {
+    pub fn new_with_secret(scalar: &C::Scalar) -> Self {
         Self { s: *scalar }
     }
 
-    pub fn get_host_key(&self) -> ProjectivePoint {
-        ProjectivePoint::GENERATOR * self.s
+    pub fn get_host_key(&self) -> C::Point {
+        C::Point::GENERATOR * self.s
     }
 
     /// Recover this participant's DKG output from successful-session recovery data.
-    pub fn recover(&self, recovery_data: &RecoveryData) -> Result<DKGOutput> {
+    pub fn recover(&self, recovery_data: &RecoveryData<C>) -> Result<DKGOutput<C>> {
         recover(&self.s, recovery_data)
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct ParticipantStep1State {
+pub struct ParticipantStep1State<C: Curve> {
     /// Participant index.
     ///
     /// Math: `i`.
@@ -65,26 +64,26 @@ pub struct ParticipantStep1State {
     /// Participant host secret key.
     ///
     /// Math: `s_i`.
-    pub s: Scalar,
+    pub s: C::Scalar,
 
     /// Ordered participant host public keys.
     ///
     /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
+    pub host_pubkeys: Vec<C::Point>,
 
     /// Participant's public encryption nonce.
     ///
     /// Math: `R_i`.
-    pub pubnonce: ProjectivePoint,
+    pub pubnonce: C::Point,
 
     /// Participant's commitment to the shared secret.
     ///
     /// Math: `C_{i,0}`.
-    pub com_to_secret: ProjectivePoint,
+    pub com_to_secret: C::Point,
 }
 
 #[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct DKGOutput {
+pub struct DKGOutput<C: Curve> {
     /// Participant index.
     ///
     /// Math: `i`.
@@ -98,32 +97,32 @@ pub struct DKGOutput {
     /// Participant's final secret share.
     ///
     /// Math: tweaked secret share `u_i`.
-    pub secshare: Scalar,
+    pub secshare: C::Scalar,
 
     /// Final threshold public key.
     ///
     /// Math: tweaked commitment to the aggregate secret, `C_0`.
-    pub threshold_pubkey: ProjectivePoint,
+    pub threshold_pubkey: C::Point,
 
     /// Final participant public shares.
     ///
     /// Math: `Y_i`.
-    pub pubshares: Vec<ProjectivePoint>,
+    pub pubshares: Vec<C::Point>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct ParticipantStep2State {
+pub struct ParticipantStep2State<C: Curve> {
     /// Equality-check transcript produced by THIS participant.
     ///
     /// Math: `eq_input`.
-    pub transcript: CertEQTranscript,
+    pub transcript: CertEQTranscript<C>,
 
     /// Participant's DKG output.
-    pub dkg_output: DKGOutput,
+    pub dkg_output: DKGOutput<C>,
 }
 
-impl ParticipantInitialState {
-    fn validate_session_params(&self, host_pubkeys: &[ProjectivePoint], t: usize) -> Result<usize> {
+impl<C: Curve> ParticipantInitialState<C> {
+    fn validate_session_params(&self, host_pubkeys: &[C::Point], t: usize) -> Result<usize> {
         chill_dkg_ensure!(
             t >= 1 && t <= host_pubkeys.len() && host_pubkeys.len() <= u32::MAX as usize,
             ChillDkgError::ThresholdOrCountError,
@@ -131,7 +130,7 @@ impl ParticipantInitialState {
 
         for (i, pubkey) in host_pubkeys.iter().enumerate() {
             chill_dkg_ensure!(
-                !bool::from(pubkey.is_identity()),
+                !pubkey.is_identity(),
                 ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
@@ -148,15 +147,15 @@ impl ParticipantInitialState {
 
         host_pubkeys
             .iter()
-            .position(|P_i| *P_i == ProjectivePoint::GENERATOR * self.s)
+            .position(|P_i| *P_i == C::Point::GENERATOR * self.s)
             .ok_or(ChillDkgError::HostSeckeyError(
                 "Host secret key does not match any host public key".to_owned(),
             ))
     }
 }
 
-impl ParticipantStep1State {
-    fn validate_coordinator_msg1(&self, coordinator_msg: &CoordinatorMsg1) -> Result<()> {
+impl<C: Curve> ParticipantStep1State<C> {
+    fn validate_coordinator_msg1(&self, coordinator_msg: &CoordinatorMsg1<C>) -> Result<()> {
         chill_dkg_ensure!(
             self.t >= 1,
             ChillDkgError::FaultyCoordinatorError("DKG threshold must be at least 1".to_owned()),
@@ -193,7 +192,7 @@ impl ParticipantStep1State {
         );
         for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
             chill_dkg_ensure!(
-                !bool::from(pubnonce.is_identity()),
+                !pubnonce.is_identity(),
                 ChillDkgError::FaultyCoordinatorError(format!(
                     "Coordinator message 1 has invalid public nonce at index {i}"
                 )),

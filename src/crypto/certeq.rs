@@ -1,11 +1,10 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::ec::{
-    BIP340XOnlyPubKey, COMPRESSED_POINT_BYTES_SIZE, CompressedPubKey, EC_SCALAR_BYTES_SIZE,
-    ScalarBytes, compress_default, compress_scalar_bip340, decompress_default,
-    parse_scalar_from_bytes, reduce_secret_scalar_from_bytes,
+use crate::crypto::curve::{
+    ByteArray, Curve, CurvePoint, CurveScalar, PointBytes, ScalarBytes, XOnlyBytes,
 };
+use crate::crypto::ec::{compress_scalar_bip340, parse_scalar_from_bytes, reduce_scalar_from_hash};
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{
@@ -13,8 +12,6 @@ use crate::crypto::tags::{
 };
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Certificate-of-equality transcript.
@@ -23,7 +20,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 /// the DKG protocol execution. Its serialized form is signed to create the
 /// certificate of equality.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CertEQTranscript {
+pub struct CertEQTranscript<C: Curve> {
     /// DKG threshold.
     ///
     /// Math: `t`.
@@ -32,31 +29,31 @@ pub struct CertEQTranscript {
     /// Aggregate VSS commitment before Taproot tweaking.
     ///
     /// Math: `C_k = sum_i C_{i,k}` for `k = 0, ..., t - 1`.
-    pub sum_commitment: Vec<ProjectivePoint>,
+    pub sum_commitment: Vec<C::Point>,
 
     /// Ordered participant host public keys.
     ///
     /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
+    pub host_pubkeys: Vec<C::Point>,
 
     /// Ordered public encryption nonces.
     ///
     /// Math: `R_i`.
-    pub pubnonces: Vec<ProjectivePoint>,
+    pub pubnonces: Vec<C::Point>,
 
     /// Aggregated encrypted secret shares.
     ///
     /// Math: `hat_u_i`.
-    pub enc_secshares: Vec<Scalar>,
+    pub enc_secshares: Vec<C::Scalar>,
 }
 
-impl CertEQTranscript {
+impl<C: Curve> CertEQTranscript<C> {
     pub fn new(
         t: usize,
-        sum_commitment: Vec<ProjectivePoint>,
-        host_pubkeys: Vec<ProjectivePoint>,
-        pubnonces: Vec<ProjectivePoint>,
-        enc_secshares: Vec<Scalar>,
+        sum_commitment: Vec<C::Point>,
+        host_pubkeys: Vec<C::Point>,
+        pubnonces: Vec<C::Point>,
+        enc_secshares: Vec<C::Scalar>,
     ) -> Self {
         Self {
             t,
@@ -72,39 +69,41 @@ impl CertEQTranscript {
     }
 }
 
-impl From<&CertEQTranscript> for Vec<u8> {
-    fn from(transcript: &CertEQTranscript) -> Self {
+impl<C: Curve> From<&CertEQTranscript<C>> for Vec<u8> {
+    fn from(transcript: &CertEQTranscript<C>) -> Self {
         let mut bytes = Vec::with_capacity(
-            4 + COMPRESSED_POINT_BYTES_SIZE
+            4 + <C::Point as CurvePoint>::BYTES_SIZE
                 * (transcript.sum_commitment.len()
                     + transcript.host_pubkeys.len()
                     + transcript.pubnonces.len())
-                + EC_SCALAR_BYTES_SIZE * transcript.enc_secshares.len(),
+                + <C::Scalar as CurveScalar>::BYTES_SIZE * transcript.enc_secshares.len(),
         );
 
         bytes.extend_from_slice(&(transcript.t as u32).to_be_bytes());
         for C_k in &transcript.sum_commitment {
-            bytes.extend_from_slice(&compress_default(C_k));
+            bytes.extend_from_slice(C_k.to_bytes().as_ref());
         }
         for P_i in &transcript.host_pubkeys {
-            bytes.extend_from_slice(&compress_default(P_i));
+            bytes.extend_from_slice(P_i.to_bytes().as_ref());
         }
         for R_i in &transcript.pubnonces {
-            bytes.extend_from_slice(&compress_default(R_i));
+            bytes.extend_from_slice(R_i.to_bytes().as_ref());
         }
         for enc_secshare in &transcript.enc_secshares {
-            let scalar_bytes: [u8; EC_SCALAR_BYTES_SIZE] = enc_secshare.to_bytes().into();
-            bytes.extend_from_slice(&scalar_bytes);
+            bytes.extend_from_slice(enc_secshare.to_bytes().as_ref());
         }
 
         bytes
     }
 }
 
-impl TryFrom<(&[u8], usize)> for CertEQTranscript {
+impl<C: Curve> TryFrom<(&[u8], usize)> for CertEQTranscript<C> {
     type Error = ChillDkgError;
 
     fn try_from((bytes, n): (&[u8], usize)) -> std::result::Result<Self, Self::Error> {
+        let point_size = <C::Point as CurvePoint>::BYTES_SIZE;
+        let scalar_size = <C::Scalar as CurveScalar>::BYTES_SIZE;
+
         chill_dkg_ensure!(
             bytes.len() >= 4,
             ChillDkgError::RuntimeError("invalid CertEq transcript length".to_owned()),
@@ -112,55 +111,49 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
 
         let t = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
         chill_dkg_ensure!(
-            bytes.len()
-                == 4 + COMPRESSED_POINT_BYTES_SIZE * t
-                    + (COMPRESSED_POINT_BYTES_SIZE
-                        + COMPRESSED_POINT_BYTES_SIZE
-                        + EC_SCALAR_BYTES_SIZE)
-                        * n,
+            bytes.len() == 4 + point_size * t + (point_size * 2 + scalar_size) * n,
             ChillDkgError::RuntimeError("invalid CertEq transcript length".to_owned()),
         );
 
         let mut offset = 4;
 
-        let mut sum_commitment: Vec<ProjectivePoint> = Vec::with_capacity(t);
-        let mut host_pubkeys: Vec<ProjectivePoint> = Vec::with_capacity(n);
-        let mut pubnonces: Vec<ProjectivePoint> = Vec::with_capacity(n);
-        let mut enc_secshares: Vec<Scalar> = Vec::with_capacity(n);
+        let mut sum_commitment: Vec<C::Point> = Vec::with_capacity(t);
+        let mut host_pubkeys: Vec<C::Point> = Vec::with_capacity(n);
+        let mut pubnonces: Vec<C::Point> = Vec::with_capacity(n);
+        let mut enc_secshares: Vec<C::Scalar> = Vec::with_capacity(n);
+
+        let take_point = |offset: &mut usize| -> Option<C::Point> {
+            let encoded = PointBytes::<C>::from_slice(&bytes[*offset..*offset + point_size])?;
+            *offset += point_size;
+            C::Point::from_bytes(&encoded)
+        };
 
         for _ in 0..t {
-            let compressed: &CompressedPubKey =
-                (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
-            offset += COMPRESSED_POINT_BYTES_SIZE;
-            sum_commitment.push(decompress_default(compressed).ok_or_else(|| {
+            sum_commitment.push(take_point(&mut offset).ok_or_else(|| {
                 ChillDkgError::RuntimeError("invalid commitment point".to_owned())
             })?);
         }
 
         for i in 0..n {
-            let compressed: &CompressedPubKey =
-                (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
-            offset += COMPRESSED_POINT_BYTES_SIZE;
             host_pubkeys.push(
-                decompress_default(compressed)
+                take_point(&mut offset)
                     .ok_or(ChillDkgError::InvalidHostPubkeyError { participant: i })?,
             );
         }
 
         for _ in 0..n {
-            let compressed: &CompressedPubKey =
-                (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
-            offset += COMPRESSED_POINT_BYTES_SIZE;
-            pubnonces.push(decompress_default(compressed).ok_or_else(|| {
+            pubnonces.push(take_point(&mut offset).ok_or_else(|| {
                 ChillDkgError::RuntimeError("invalid public nonce point".to_owned())
             })?);
         }
 
         for _ in 0..n {
-            let scalar_bytes: [u8; EC_SCALAR_BYTES_SIZE] =
-                bytes[offset..offset + EC_SCALAR_BYTES_SIZE].try_into()?;
-            offset += EC_SCALAR_BYTES_SIZE;
-            enc_secshares.push(parse_scalar_from_bytes(scalar_bytes)?);
+            let scalar_bytes = ScalarBytes::<C>::from_slice(&bytes[offset..offset + scalar_size])
+                .ok_or_else(|| {
+                ChillDkgError::RuntimeError("invalid encrypted secret share".to_owned())
+            })?;
+            offset += scalar_size;
+            enc_secshares.push(parse_scalar_from_bytes::<C>(&scalar_bytes)?);
         }
 
         Ok(Self {
@@ -173,9 +166,9 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
     }
 }
 
-pub fn verify_certeq_certificate(
-    transcript: &CertEQTranscript,
-    cert: &[SchnorrSignature],
+pub fn verify_certeq_certificate<C: Curve>(
+    transcript: &CertEQTranscript<C>,
+    cert: &[SchnorrSignature<C>],
 ) -> Result<()> {
     let host_pubkeys = &transcript.host_pubkeys;
 
@@ -200,16 +193,16 @@ pub fn verify_certeq_certificate(
 }
 
 #[derive(Zeroize, ZeroizeOnDrop)]
-pub struct CertEQSigner {
-    hostkey: Scalar,
+pub struct CertEQSigner<C: Curve> {
+    hostkey: C::Scalar,
     message: Vec<u8>,
     aux_rand: [u8; 32],
 }
 
-impl CertEQSigner {
+impl<C: Curve> CertEQSigner<C> {
     pub fn new(
-        hostkey: &Scalar,
-        transcript: &CertEQTranscript,
+        hostkey: &C::Scalar,
+        transcript: &CertEQTranscript<C>,
         idx: usize,
         aux_rand: [u8; 32],
     ) -> Self {
@@ -222,58 +215,59 @@ impl CertEQSigner {
     }
 }
 
-impl SchnorrSigner for CertEQSigner {
+impl<C: Curve> SchnorrSigner<C> for CertEQSigner<C> {
     fn message(&self) -> &[u8] {
         self.message.as_slice()
     }
 
-    fn secret_key(&self) -> SecretScalar {
+    fn secret_key(&self) -> SecretScalar<C> {
         Zeroizing::new(self.hostkey)
     }
 
     fn x_only_nonce(
         &self,
-        P_x: &BIP340XOnlyPubKey,
-        d: &Scalar,
-    ) -> Result<(BIP340XOnlyPubKey, SecretScalar)> {
-        let aux_hash = tagged_hash(TAG_BIP340_AUX, self.aux_rand);
+        P_x: &XOnlyBytes<C>,
+        d: &C::Scalar,
+    ) -> Result<(XOnlyBytes<C>, SecretScalar<C>)> {
+        let aux_hash = tagged_hash::<C>(TAG_BIP340_AUX, self.aux_rand);
 
-        let mut t: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
-            Zeroizing::new(ScalarBytes::from(d.to_bytes()));
-        for i in 0..EC_SCALAR_BYTES_SIZE {
-            t[i] ^= aux_hash[i];
+        let mut t: Zeroizing<ScalarBytes<C>> = Zeroizing::new(d.to_bytes());
+        for (t_i, aux_i) in t.as_mut().iter_mut().zip(aux_hash.as_ref()) {
+            *t_i ^= aux_i;
         }
 
         let mut nonce_preimage = Zeroizing::new(Vec::with_capacity(
-            EC_SCALAR_BYTES_SIZE * 2 + self.message().len(),
+            <C::Scalar as CurveScalar>::BYTES_SIZE
+                + <C::Point as CurvePoint>::X_ONLY_BYTES_SIZE
+                + self.message().len(),
         ));
-        nonce_preimage.extend_from_slice(t.as_slice());
-        nonce_preimage.extend_from_slice(P_x);
+        nonce_preimage.extend_from_slice(t.as_ref());
+        nonce_preimage.extend_from_slice(P_x.as_ref());
         nonce_preimage.extend_from_slice(self.message());
 
-        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_BIP340_NONCE, &nonce_preimage));
-        let k0 = reduce_secret_scalar_from_bytes(preimage_bytes);
+        let preimage_hash = Zeroizing::new(tagged_hash::<C>(TAG_BIP340_NONCE, &nonce_preimage));
+        let k0 = reduce_scalar_from_hash::<C>(&preimage_hash);
 
         chill_dkg_ensure!(
-            !bool::from(k0.is_zero()),
+            !k0.is_zero(),
             ChillDkgError::RuntimeError("CertEq signing failed: BIP340: nonce is zero".to_owned()),
         );
 
-        Ok(compress_scalar_bip340(&k0))
+        Ok(compress_scalar_bip340::<C>(&k0))
     }
 
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        get_certeq_challenge(R, P, self.message())
+    fn challenge(&self, R: &XOnlyBytes<C>, P: &XOnlyBytes<C>) -> Result<C::Scalar> {
+        get_certeq_challenge::<C>(R, P, self.message())
     }
 }
 
-pub struct CertEQVerifier {
-    host_pubkey: ProjectivePoint,
+pub struct CertEQVerifier<C: Curve> {
+    host_pubkey: C::Point,
     message: Vec<u8>,
 }
 
-impl CertEQVerifier {
-    pub fn new(host_pubkey: ProjectivePoint, transcript: &CertEQTranscript, idx: usize) -> Self {
+impl<C: Curve> CertEQVerifier<C> {
+    pub fn new(host_pubkey: C::Point, transcript: &CertEQTranscript<C>, idx: usize) -> Self {
         let message = get_certeq_message(transcript, idx);
         CertEQVerifier {
             host_pubkey,
@@ -282,37 +276,38 @@ impl CertEQVerifier {
     }
 }
 
-impl SchnorrVerifier for CertEQVerifier {
+impl<C: Curve> SchnorrVerifier<C> for CertEQVerifier<C> {
     fn message(&self) -> &[u8] {
         self.message.as_slice()
     }
 
-    fn pub_key(&self) -> ProjectivePoint {
+    fn pub_key(&self) -> C::Point {
         self.host_pubkey
     }
 
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        get_certeq_challenge(R, P, self.message())
+    fn challenge(&self, R: &XOnlyBytes<C>, P: &XOnlyBytes<C>) -> Result<C::Scalar> {
+        get_certeq_challenge::<C>(R, P, self.message())
     }
 }
 
-fn get_certeq_challenge(
-    R: &BIP340XOnlyPubKey,
-    P: &BIP340XOnlyPubKey,
+fn get_certeq_challenge<C: Curve>(
+    R: &XOnlyBytes<C>,
+    P: &XOnlyBytes<C>,
     message: &[u8],
-) -> Result<Scalar> {
-    let mut challenge_preimage = Vec::with_capacity(EC_SCALAR_BYTES_SIZE * 2 + message.len());
-    challenge_preimage.extend_from_slice(R);
-    challenge_preimage.extend_from_slice(P);
+) -> Result<C::Scalar> {
+    let mut challenge_preimage =
+        Vec::with_capacity(<C::Point as CurvePoint>::X_ONLY_BYTES_SIZE * 2 + message.len());
+    challenge_preimage.extend_from_slice(R.as_ref());
+    challenge_preimage.extend_from_slice(P.as_ref());
     challenge_preimage.extend_from_slice(message);
 
-    Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+    Ok(C::hash_to_scalar(&tagged_hash::<C>(
         TAG_BIP340_CHALLENGE,
         challenge_preimage,
-    ))))
+    )))
 }
 
-fn get_certeq_message(transcript: &CertEQTranscript, idx: usize) -> Vec<u8> {
+fn get_certeq_message<C: Curve>(transcript: &CertEQTranscript<C>, idx: usize) -> Vec<u8> {
     //   ("BIP DKG/certeq message" || zero padding to 33 bytes)
     //   || uint32_be(idx)
     //   || transcript
@@ -334,11 +329,13 @@ fn get_certeq_message(transcript: &CertEQTranscript, idx: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::secp256k1::Secp256k1;
+    use k256::{ProjectivePoint, Scalar};
 
     #[test]
     fn certeq_transcript_serialization_roundtrips() -> Result<()> {
         let G = ProjectivePoint::GENERATOR;
-        let transcript = CertEQTranscript::new(
+        let transcript = CertEQTranscript::<Secp256k1>::new(
             2,
             vec![G * Scalar::from(3u64), G * Scalar::from(4u64)],
             vec![

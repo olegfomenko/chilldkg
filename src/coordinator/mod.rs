@@ -3,10 +3,9 @@
 use crate::chill_dkg_ensure;
 use crate::coordinator::recovery::recover;
 use crate::crypto::certeq::CertEQTranscript;
+use crate::crypto::curve::{Curve, CurvePoint};
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{ParticipantMsg1, RecoveryData};
-use k256::ProjectivePoint;
-use k256::elliptic_curve::Group;
 
 pub mod recovery;
 pub mod transitions;
@@ -19,7 +18,7 @@ pub trait CoordinatorState: Sized {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoordinatorInitialState {
+pub struct CoordinatorInitialState<C: Curve> {
     /// DKG threshold.
     ///
     /// Math: `t`.
@@ -28,11 +27,11 @@ pub struct CoordinatorInitialState {
     /// Ordered participant host public keys.
     ///
     /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
+    pub host_pubkeys: Vec<C::Point>,
 }
 
-impl CoordinatorInitialState {
-    pub fn new(host_pubkeys: Vec<ProjectivePoint>, t: usize) -> Result<Self> {
+impl<C: Curve> CoordinatorInitialState<C> {
+    pub fn new(host_pubkeys: Vec<C::Point>, t: usize) -> Result<Self> {
         let state = Self { t, host_pubkeys };
         state.validate_session_params()?;
         Ok(state)
@@ -48,7 +47,7 @@ impl CoordinatorInitialState {
 
         for (i, P_i) in self.host_pubkeys.iter().enumerate() {
             chill_dkg_ensure!(
-                !bool::from(P_i.is_identity()),
+                !P_i.is_identity(),
                 ChillDkgError::InvalidHostPubkeyError { participant: i },
             );
 
@@ -66,7 +65,7 @@ impl CoordinatorInitialState {
         Ok(())
     }
 
-    fn validate_participant_msg1(&self, msgs: &[ParticipantMsg1]) -> Result<()> {
+    fn validate_participant_msg1(&self, msgs: &[ParticipantMsg1<C>]) -> Result<()> {
         chill_dkg_ensure!(
             msgs.len() == self.host_pubkeys.len(),
             ChillDkgError::ValueError(
@@ -90,7 +89,7 @@ impl CoordinatorInitialState {
                 },
             );
             chill_dkg_ensure!(
-                !bool::from(p_msg.pubnonce.is_identity()),
+                !p_msg.pubnonce.is_identity(),
                 ChillDkgError::FaultyParticipantError {
                     participant: i,
                     message: "Participant sent invalid public nonce".to_owned(),
@@ -99,7 +98,7 @@ impl CoordinatorInitialState {
 
             for (k, C_k) in p_msg.commitment.iter().enumerate() {
                 chill_dkg_ensure!(
-                    !bool::from(C_k.is_identity()),
+                    !C_k.is_identity(),
                     ChillDkgError::FaultyParticipantError {
                         participant: i,
                         message: format!(
@@ -114,13 +113,13 @@ impl CoordinatorInitialState {
     }
 
     /// Recover coordinator's DKG output from successful-session recovery data.
-    pub fn recover(&self, recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
+    pub fn recover(&self, recovery_data: &RecoveryData<C>) -> Result<CoordinatorDKGOutput<C>> {
         recover(recovery_data)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoordinatorDKGOutput {
+pub struct CoordinatorDKGOutput<C: Curve> {
     /// DKG threshold.
     ///
     /// Math: `t`.
@@ -129,16 +128,16 @@ pub struct CoordinatorDKGOutput {
     /// Final threshold public key.
     ///
     /// Math: tweaked commitment to the aggregate secret, `C_0`.
-    pub threshold_pubkey: ProjectivePoint,
+    pub threshold_pubkey: C::Point,
 
     /// Final participant public shares.
     ///
     /// Math: `Y_i`.
-    pub pubshares: Vec<ProjectivePoint>,
+    pub pubshares: Vec<C::Point>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoordinatorStep1State {
+pub struct CoordinatorStep1State<C: Curve> {
     /// DKG threshold.
     ///
     /// Math: `t`.
@@ -147,13 +146,13 @@ pub struct CoordinatorStep1State {
     /// Ordered participant host public keys.
     ///
     /// Math: `P_i` is the host public key of participant `i`.
-    pub host_pubkeys: Vec<ProjectivePoint>,
+    pub host_pubkeys: Vec<C::Point>,
 
     /// Equality-check transcript.
     ///
     /// Math: `eq_input`.
-    pub transcript: CertEQTranscript,
+    pub transcript: CertEQTranscript<C>,
 
     /// Coordinator's DKG output.
-    pub dkg_output: CoordinatorDKGOutput,
+    pub dkg_output: CoordinatorDKGOutput<C>,
 }

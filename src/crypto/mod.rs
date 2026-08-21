@@ -1,34 +1,43 @@
 pub mod certeq;
+pub mod curve;
 pub mod ec;
 pub mod enc;
 pub mod poly;
 pub mod pop;
 pub mod schnorr;
+pub mod secp256k1;
 pub mod tags;
 
-use k256::Scalar;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use zeroize::Zeroizing;
+
+use crate::crypto::curve::{Curve, Hash};
 
 /// A secret scalar that wipes its memory on drop.
 /// Note: `*secret` yields a plain `Copy` of the value — deref with intent.
-pub type SecretScalar = Zeroizing<Scalar>;
+pub type SecretScalar<C> = Zeroizing<<C as Curve>::Scalar>;
 
-pub type TaggedHash = [u8; 32];
+/// Hashes `x` with the hasher of the curve `C`.
+pub fn hash<C: Curve>(x: impl AsRef<[u8]>) -> Hash<C> {
+    C::Hasher::digest(x.as_ref()).into()
+}
 
-pub fn tagged_hash(tag: impl AsRef<[u8]>, x: impl AsRef<[u8]>) -> TaggedHash {
-    let tag_hash = Sha256::digest(tag.as_ref());
+/// BIP340 tagged hash computed with the hasher of the curve `C`.
+pub fn tagged_hash<C: Curve>(tag: impl AsRef<[u8]>, x: impl AsRef<[u8]>) -> Hash<C> {
+    let tag_hash = C::Hasher::digest(tag.as_ref());
 
-    let mut hash = Sha256::new();
-    hash.update(tag_hash);
-    hash.update(tag_hash);
-    hash.update(x.as_ref());
-    hash.finalize().into()
+    let mut hasher = C::Hasher::new();
+    hasher.update(&tag_hash);
+    hasher.update(&tag_hash);
+    hasher.update(x.as_ref());
+    hasher.finalize().into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::secp256k1::Secp256k1;
+    use sha2::Sha256;
 
     #[test]
     fn computes_tagged_hash() {
@@ -41,6 +50,9 @@ mod tests {
         expected.update(tag_hash);
         expected.update(x);
 
-        assert_eq!(tagged_hash(tag, x), <[u8; 32]>::from(expected.finalize()));
+        assert_eq!(
+            tagged_hash::<Secp256k1>(tag, x),
+            <[u8; 32]>::from(expected.finalize())
+        );
     }
 }

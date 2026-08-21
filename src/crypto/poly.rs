@@ -1,53 +1,59 @@
-use crate::crypto::ec::parse_secret_scalar_from_bytes;
+use crate::crypto::curve::{Curve, CurvePoint, CurveScalar, Hash};
+use crate::crypto::ec::parse_scalar_from_hash;
 use crate::crypto::tags::TAG_VSS_COEFFS;
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::Result;
-use k256::{ProjectivePoint, Scalar};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 #[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct Polynomial {
-    coefficients: Vec<Scalar>,
+pub struct Polynomial<C: Curve> {
+    coefficients: Vec<C::Scalar>,
 }
 
-impl Polynomial {
-    pub fn new(seed: &[u8; 32], t: usize) -> Result<Self> {
+impl<C: Curve> Polynomial<C> {
+    pub fn new(seed: &Hash<C>, t: usize) -> Result<Self> {
         let mut poly = Self {
             coefficients: Vec::with_capacity(t),
         };
 
-        let mut preimage = Zeroizing::new([0u8; 36]);
-        preimage[0..32].copy_from_slice(seed);
+        let seed = seed.as_ref();
+        let mut preimage = Zeroizing::new(Vec::with_capacity(seed.len() + 4));
+        preimage.extend_from_slice(seed);
+        preimage.resize(seed.len() + 4, 0);
 
         for i in 0..t {
-            preimage[32..].copy_from_slice(&(i as u32).to_be_bytes());
-            let preimage_hash = Zeroizing::new(tagged_hash(TAG_VSS_COEFFS, &preimage));
+            preimage[seed.len()..].copy_from_slice(&(i as u32).to_be_bytes());
+            let preimage_hash = Zeroizing::new(tagged_hash::<C>(TAG_VSS_COEFFS, &preimage));
             poly.coefficients
-                .push(parse_secret_scalar_from_bytes(preimage_hash)?);
+                .push(parse_scalar_from_hash::<C>(&preimage_hash)?);
         }
 
         Ok(poly)
     }
 
-    fn eval(&self, x: Scalar) -> Scalar {
+    fn eval(&self, x: C::Scalar) -> C::Scalar {
         self.coefficients
             .iter()
             .rev()
-            .fold(Scalar::ZERO, |acc, coefficient| acc * x + coefficient)
+            .fold(C::Scalar::ZERO, |acc, coefficient| acc * x + *coefficient)
     }
 
-    pub fn eval_shares(&self, n: u64) -> Zeroizing<Vec<Scalar>> {
-        Zeroizing::new((0u64..n).map(|i| self.eval(Scalar::from(i + 1))).collect())
+    pub fn eval_shares(&self, n: u64) -> Zeroizing<Vec<C::Scalar>> {
+        Zeroizing::new(
+            (0u64..n)
+                .map(|i| self.eval(C::Scalar::from_u64(i + 1)))
+                .collect(),
+        )
     }
 
-    pub fn coeff(&self, i: usize) -> Option<SecretScalar> {
+    pub fn coeff(&self, i: usize) -> Option<SecretScalar<C>> {
         self.coefficients.get(i).map(|c| Zeroizing::new(*c))
     }
 
-    pub fn commit(&self) -> Vec<ProjectivePoint> {
+    pub fn commit(&self) -> Vec<C::Point> {
         self.coefficients
             .iter()
-            .map(|c| ProjectivePoint::GENERATOR * c)
+            .map(|c| C::Point::GENERATOR * *c)
             .collect()
     }
 }
@@ -55,16 +61,20 @@ impl Polynomial {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::secp256k1::Secp256k1;
+    use k256::{ProjectivePoint, Scalar};
 
     fn scalar(value: u64) -> Scalar {
         Scalar::from(value)
     }
 
+    fn polynomial(coefficients: Vec<Scalar>) -> Polynomial<Secp256k1> {
+        Polynomial { coefficients }
+    }
+
     #[test]
     fn returns_coefficients_by_index() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(3), scalar(5), scalar(8)],
-        };
+        let polynomial = polynomial(vec![scalar(3), scalar(5), scalar(8)]);
 
         assert_eq!(polynomial.coeff(0), Some(Zeroizing::new(scalar(3))));
         assert_eq!(polynomial.coeff(1), Some(Zeroizing::new(scalar(5))));
@@ -74,36 +84,28 @@ mod tests {
 
     #[test]
     fn evaluates_empty_polynomial_as_zero() {
-        let polynomial = Polynomial {
-            coefficients: vec![],
-        };
+        let polynomial = polynomial(vec![]);
 
         assert_eq!(polynomial.eval(scalar(7)), Scalar::ZERO);
     }
 
     #[test]
     fn evaluates_constant_polynomial() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(42)],
-        };
+        let polynomial = polynomial(vec![scalar(42)]);
 
         assert_eq!(polynomial.eval(scalar(9)), scalar(42));
     }
 
     #[test]
     fn evaluates_polynomial_at_scalar() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(3), scalar(2), scalar(5)],
-        };
+        let polynomial = polynomial(vec![scalar(3), scalar(2), scalar(5)]);
 
         assert_eq!(polynomial.eval(scalar(4)), scalar(91));
     }
 
     #[test]
     fn evaluates_shares_at_one_based_indices() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(3), scalar(2), scalar(5)],
-        };
+        let polynomial = polynomial(vec![scalar(3), scalar(2), scalar(5)]);
 
         assert_eq!(
             *polynomial.eval_shares(4),
@@ -113,18 +115,14 @@ mod tests {
 
     #[test]
     fn evaluates_zero_shares_as_empty_list() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(3), scalar(2), scalar(5)],
-        };
+        let polynomial = polynomial(vec![scalar(3), scalar(2), scalar(5)]);
 
         assert_eq!(*polynomial.eval_shares(0), Vec::<Scalar>::new());
     }
 
     #[test]
     fn commits_coefficients_to_generator_multiples() {
-        let polynomial = Polynomial {
-            coefficients: vec![scalar(3), scalar(5), scalar(8)],
-        };
+        let polynomial = polynomial(vec![scalar(3), scalar(5), scalar(8)]);
 
         assert_eq!(
             polynomial.commit(),
@@ -138,9 +136,7 @@ mod tests {
 
     #[test]
     fn commits_empty_polynomial_as_empty_list() {
-        let polynomial = Polynomial {
-            coefficients: vec![],
-        };
+        let polynomial = polynomial(vec![]);
 
         assert_eq!(polynomial.commit(), Vec::<ProjectivePoint>::new());
     }

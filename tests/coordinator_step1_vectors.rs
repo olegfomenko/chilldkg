@@ -2,6 +2,7 @@
 
 use crate::common::{parse_coordinator_msg1, parse_participant_msg1, parse_point_hex};
 use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
+use chilldkg_rs::crypto::secp256k1::Secp256k1;
 use chilldkg_rs::errors::ChillDkgError::{
     DuplicateHostPubkeyError, FaultyParticipantError, ThresholdOrCountError,
 };
@@ -45,7 +46,7 @@ fn test_coordinator_step1_passes() {
         host_pubkeys.len(),
     ).unwrap();
 
-    let initial = CoordinatorInitialState::new(host_pubkeys, t).unwrap();
+    let initial = CoordinatorInitialState::<Secp256k1>::new(host_pubkeys, t).unwrap();
     let (_, cmsg1) = initial.next(pmsg1).unwrap();
     assert_eq!(cmsg1, expected_cmsg1);
 }
@@ -63,7 +64,7 @@ fn test_coordinator_step1_invalid_threshold() {
 
     let t = 0;
 
-    let initial = CoordinatorInitialState::new(host_pubkeys, t);
+    let initial = CoordinatorInitialState::<Secp256k1>::new(host_pubkeys, t);
     assert!(initial.is_err());
     assert_eq!(initial.err().unwrap(), ThresholdOrCountError);
 }
@@ -83,7 +84,7 @@ fn test_coordinator_step1_duplicate() {
 
     let t = 2;
 
-    let initial = CoordinatorInitialState::new(host_pubkeys, t);
+    let initial = CoordinatorInitialState::<Secp256k1>::new(host_pubkeys, t);
     assert!(initial.is_err());
     assert_eq!(
         initial.err().unwrap(),
@@ -108,7 +109,7 @@ fn test_coordinator_step1_invalid_pmsg1() {
     let t = 2;
 
     let n = host_pubkeys.len();
-    let initial = CoordinatorInitialState::new(host_pubkeys, t).unwrap();
+    let initial = CoordinatorInitialState::<Secp256k1>::new(host_pubkeys, t).unwrap();
 
     let pmsg1 = vec![
         parse_participant_msg1(

@@ -1,10 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::common::{parse_point_hex, parse_scalar_hex};
+use crate::common::{SCHNORR_SIG_BYTES_SIZE, Signature, parse_point_hex, parse_scalar_hex};
 use chilldkg_rs::coordinator::recovery::recover as recover_coordinator;
 use chilldkg_rs::crypto::certeq::CertEQTranscript;
-use chilldkg_rs::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
-use chilldkg_rs::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature};
+use chilldkg_rs::crypto::secp256k1::{
+    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, Secp256k1,
+};
 use chilldkg_rs::errors::{ChillDkgError, Result};
 use chilldkg_rs::msg::RecoveryData;
 use chilldkg_rs::party::recovery::recover as recover_participant;
@@ -146,7 +147,7 @@ fn test_participant_recover_rejects_host_seckey_mismatch() {
     );
 }
 
-fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<RecoveryData> {
+fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<RecoveryData<Secp256k1>> {
     let bytes = hex::decode(hex).map_err(|err| ChillDkgError::RuntimeError(err.to_string()))?;
     let transcript_len = 4
         + COMPRESSED_POINT_BYTES_SIZE * threshold
@@ -159,21 +160,22 @@ fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<Recovery
         ));
     }
 
-    let transcript = CertEQTranscript::try_from((&bytes[..transcript_len], n)).map_err(|err| {
-        ChillDkgError::RecoveryDataError(match err {
-            ChillDkgError::InvalidHostPubkeyError { .. } => {
-                "Invalid session parameters in recovery data".to_owned()
-            }
-            _ => "Failed to deserialize recovery data".to_owned(),
-        })
-    })?;
+    let transcript = CertEQTranscript::<Secp256k1>::try_from((&bytes[..transcript_len], n))
+        .map_err(|err| {
+            ChillDkgError::RecoveryDataError(match err {
+                ChillDkgError::InvalidHostPubkeyError { .. } => {
+                    "Invalid session parameters in recovery data".to_owned()
+                }
+                _ => "Failed to deserialize recovery data".to_owned(),
+            })
+        })?;
 
     Ok(RecoveryData {
         transcript,
         cert: bytes[transcript_len..]
             .chunks_exact(SCHNORR_SIG_BYTES_SIZE)
-            .map(SchnorrSignature::try_from)
-            .collect::<std::result::Result<Vec<_>, _>>()?,
+            .map(Signature::from_slice)
+            .collect::<Result<Vec<_>>>()?,
     })
 }
 
