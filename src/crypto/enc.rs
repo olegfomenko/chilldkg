@@ -107,12 +107,12 @@ pub fn encrypt(
 ) -> Result<Vec<Scalar>> {
     chill_dkg_ensure!(
         idx < P.len(),
-        ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
+        ChillDkgError::Runtime("Encryption failed: participant index out of range".into()),
     );
     chill_dkg_ensure!(
         shares.len() == P.len(),
-        ChillDkgError::RuntimeError(
-            "Encryption failed: number of shares must match number of encryption keys".to_owned()
+        ChillDkgError::Runtime(
+            "Encryption failed: number of shares must match number of encryption keys".into()
         ),
     );
 
@@ -161,7 +161,7 @@ pub fn decrypt(
 ) -> Result<SecretScalar> {
     chill_dkg_ensure!(
         idx < R.len(),
-        ChillDkgError::RuntimeError("Encryption failed: participant index out of range".to_owned()),
+        ChillDkgError::Runtime("Encryption failed: participant index out of range".into()),
     );
 
     let mut aggr_pads = Zeroizing::new(Scalar::ZERO);

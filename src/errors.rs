@@ -1,4 +1,5 @@
 use std::array::TryFromSliceError;
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[macro_export]
@@ -12,68 +13,76 @@ macro_rules! chill_dkg_ensure {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ChillDkgError {
-    #[error("ProtocolError")]
-    ProtocolError(String),
+    #[error("protocol error: {0}")]
+    Protocol(Cow<'static, str>),
 
-    #[error("FaultyParticipantError")]
-    FaultyParticipantError { participant: usize, message: String },
+    #[error("participant {participant} is faulty: {message}")]
+    FaultyParticipant {
+        participant: usize,
+        message: Cow<'static, str>,
+    },
 
-    #[error("FaultyParticipantOrCoordinatorError")]
-    FaultyParticipantOrCoordinatorError { participant: usize, message: String },
+    #[error("participant {participant} or the coordinator is faulty: {message}")]
+    FaultyParticipantOrCoordinator {
+        participant: usize,
+        message: Cow<'static, str>,
+    },
 
-    #[error("FaultyCoordinatorError")]
-    FaultyCoordinatorError(String),
+    #[error("coordinator is faulty: {0}")]
+    FaultyCoordinator(Cow<'static, str>),
 
-    #[error("UnknownFaultyParticipantOrCoordinatorError")]
-    UnknownFaultyParticipantOrCoordinatorError(String),
+    #[error("unable to identify whether a participant or the coordinator is faulty: {0}")]
+    UnknownFaultyParticipantOrCoordinator(Cow<'static, str>),
 
-    #[error("MsgParseError")]
-    MsgParseError(String),
+    #[error("failed to parse message: {0}")]
+    MsgParse(Cow<'static, str>),
 
-    #[error("HostSeckeyError")]
-    HostSeckeyError(String),
+    #[error("host secret key error: {0}")]
+    HostSeckey(Cow<'static, str>),
 
-    #[error("SessionParamsError")]
-    SessionParamsError(String),
+    #[error("invalid session parameters: {0}")]
+    SessionParams(Cow<'static, str>),
 
-    #[error("DuplicateHostPubkeyError")]
-    DuplicateHostPubkeyError {
+    #[error("participants {participant1} and {participant2} have duplicate host public keys")]
+    DuplicateHostPubkey {
         participant1: usize,
         participant2: usize,
     },
 
-    #[error("InvalidHostPubkeyError")]
-    InvalidHostPubkeyError { participant: usize },
+    #[error("participant {participant} has an invalid host public key")]
+    InvalidHostPubkey { participant: usize },
 
-    #[error("ThresholdOrCountError")]
-    ThresholdOrCountError,
+    #[error(
+        "threshold must be between 1 and the participant count, and participant count must not exceed u32::MAX"
+    )]
+    ThresholdOrCount,
 
-    #[error("RandomnessError")]
-    RandomnessError,
+    #[error("invalid randomness")]
+    Randomness,
 
-    #[error("InvalidSignatureInCertificateError")]
-    InvalidSignatureInCertificateError { participant: usize },
+    #[error("participant {participant} has an invalid signature in the certificate")]
+    InvalidSignatureInCertificate { participant: usize },
 
-    #[error("RecoveryDataError")]
-    RecoveryDataError(String),
+    #[error("invalid recovery data: {0}")]
+    RecoveryData(Cow<'static, str>),
 
-    #[error("SecshareSumError")]
-    SecshareSumError(String),
+    #[error("invalid secret-share sum: {0}")]
+    SecshareSum(Cow<'static, str>),
 
-    #[error("ValueError")]
-    ValueError(String),
+    #[error("invalid value: {0}")]
+    Value(Cow<'static, str>),
 
-    #[error("IndexError")]
-    IndexError(String),
+    #[error("invalid index: {0}")]
+    Index(Cow<'static, str>),
 
-    #[error("RuntimeError")]
-    RuntimeError(String),
+    #[error("runtime error: {0}")]
+    Runtime(Cow<'static, str>),
 }
 
 pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
 impl From<TryFromSliceError> for ChillDkgError {
     fn from(e: TryFromSliceError) -> Self {
-        ChillDkgError::RuntimeError(format!("{:?}", e))
+        ChillDkgError::Runtime(format!("{:?}", e).into())
     }
 }

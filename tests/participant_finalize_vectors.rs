@@ -4,9 +4,7 @@ use crate::common::{
     parse_coordinator_msg1, parse_coordinator_msg2, parse_hex_array, parse_participant_msg1,
     parse_point_hex, parse_scalar_hex, serialize_recovery_data,
 };
-use chilldkg_rs::errors::ChillDkgError::{
-    FaultyCoordinatorError, FaultyParticipantOrCoordinatorError,
-};
+use chilldkg_rs::errors::ChillDkgError::{FaultyCoordinator, FaultyParticipantOrCoordinator};
 use chilldkg_rs::msg::ParticipantMsg2;
 use chilldkg_rs::party::{ParticipantInitialState, ParticipantState};
 
@@ -106,10 +104,7 @@ fn test_participant_finalize_rejects_short_certificate() {
     let (next, actual_pmsg2) = next.unwrap().next((cmsg1, aux_rand)).unwrap();
     assert_eq!(actual_pmsg2, pmsg2);
     let err = next.unwrap().next(cmsg2).err().unwrap();
-    assert_eq!(
-        err,
-        FaultyCoordinatorError("invalid certificate length".to_owned())
-    );
+    assert_eq!(err, FaultyCoordinator("invalid certificate length".into()));
 }
 
 #[test]
@@ -148,9 +143,9 @@ fn test_participant_finalize_rejects_invalid_signature() {
     let err = next.unwrap().next(cmsg2).err().unwrap();
     assert_eq!(
         err,
-        FaultyParticipantOrCoordinatorError {
+        FaultyParticipantOrCoordinator {
             participant: 2,
-            message: "Participant has provided an invalid signature for the certificate, error = RuntimeError(\"Schnorr verification failed: nonce has odd Y\")".to_owned(),
+            message: "Participant has provided an invalid signature for the certificate, error = Runtime(\"Schnorr verification failed: nonce has odd Y\")".into(),
         }
     );
 }

@@ -25,7 +25,7 @@ pub type ScalarBytes = [u8; EC_SCALAR_BYTES_SIZE];
 /// Note: It does not reduce by field modulus.
 pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> {
     let res = Option::<Scalar>::from(Scalar::from_repr(x.into())).ok_or_else(|| {
-        ChillDkgError::RuntimeError("failed to convert 32 byte array into field element".to_owned())
+        ChillDkgError::Runtime("failed to convert 32 byte array into field element".into())
     })?;
 
     Ok(res)
@@ -38,7 +38,7 @@ pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> 
 /// TODO: Unfortunately, i haven't found a way to get rid of passing x by value to Scalar::from_repr
 pub fn parse_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>) -> Result<Scalar> {
     let res = Option::<Scalar>::from(Scalar::from_repr((*x).into())).ok_or_else(|| {
-        ChillDkgError::RuntimeError("failed to convert 32 byte array into field element".to_owned())
+        ChillDkgError::Runtime("failed to convert 32 byte array into field element".into())
     })?;
 
     Ok(res)
@@ -53,7 +53,7 @@ pub fn reduce_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>)
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     chill_dkg_ensure!(
         !bool::from(p.is_identity()),
-        ChillDkgError::RuntimeError("cannot tap tweak identity point".to_owned()),
+        ChillDkgError::Runtime("cannot tap tweak identity point".into()),
     );
 
     let tweak = parse_scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;
