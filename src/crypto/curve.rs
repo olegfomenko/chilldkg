@@ -11,10 +11,10 @@
 use core::fmt::Debug;
 use core::iter::Sum;
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub};
-
 use rand_core::CryptoRngCore;
 use sha2::Digest;
 use sha2::digest::Output;
+use std::ops::SubAssign;
 use zeroize::Zeroize;
 
 /// A fixed-size byte encoding of a curve element.
@@ -50,6 +50,11 @@ pub trait CurveScalar:
     + Neg<Output = Self>
     + Sum
     + for<'a> Sum<&'a Self>
+    + for<'a> Add<&'a Self, Output = Self>
+    + for<'a> Sub<&'a Self, Output = Self>
+    + for<'a> Mul<&'a Self, Output = Self>
+    + for<'a> AddAssign<&'a Self>
+    + for<'a> SubAssign<&'a Self>
 {
     /// Canonical byte encoding of a scalar.
     type Bytes: ByteArray;
@@ -96,6 +101,7 @@ pub trait CurvePoint:
     + Mul<Self::Scalar, Output = Self>
     + Sum
     + for<'a> Sum<&'a Self>
+    + for<'a> Mul<&'a Self::Scalar, Output = Self>
 {
     /// The scalar field the group is defined over.
     type Scalar: CurveScalar;
@@ -142,7 +148,7 @@ pub trait CurvePoint:
     /// The default implementation is a plain sum of single multiplications;
     /// curves backed by an MSM implementation should override it.
     fn lincomb(points_and_scalars: &[(Self, Self::Scalar)]) -> Self {
-        points_and_scalars.iter().map(|(P, x)| *P * *x).sum()
+        points_and_scalars.iter().map(|(P, x)| *P * x).sum()
     }
 }
 

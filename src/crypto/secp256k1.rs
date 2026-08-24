@@ -80,13 +80,16 @@ impl CurvePoint for ProjectivePoint {
         bool::from(self.to_affine().y_is_odd())
     }
 
+    /// SEC1 serialization of secp256k1 point
     fn to_bytes(&self) -> Self::Bytes {
-        let encoded = self.to_affine().to_encoded_point(true);
         let mut out = [0u8; COMPRESSED_POINT_BYTES_SIZE];
+
+        let encoded = self.to_affine().to_encoded_point(true);
         out.copy_from_slice(encoded.as_bytes());
         out
     }
 
+    /// SEC1 deserialization of secp256k1 point
     fn from_bytes(bytes: &Self::Bytes) -> Option<Self> {
         let encoded = EncodedPoint::from_bytes(bytes).ok()?;
         let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))?;
@@ -94,6 +97,7 @@ impl CurvePoint for ProjectivePoint {
         Some(ProjectivePoint::from(affine))
     }
 
+    /// Serializes BIP340 x-only point
     fn to_x_only_bytes(&self) -> Self::XOnlyBytes {
         self.to_affine().x().into()
     }
