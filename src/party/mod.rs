@@ -3,11 +3,11 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
 use crate::errors::{ChillDkgError, Result};
-use crate::msg::{CoordinatorMsg1, RecoveryData};
+use crate::msg::{CoordinatorMsg1, DKGOutput, RecoveryData};
 use crate::party::recovery::recover;
 use k256::elliptic_curve::Group;
-use k256::elliptic_curve::rand_core::CryptoRngCore;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
+use rand_core::CryptoRngCore;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 pub mod recovery;
@@ -81,34 +81,6 @@ pub struct ParticipantStep1State {
     ///
     /// Math: `C_{i,0}`.
     pub com_to_secret: ProjectivePoint,
-}
-
-#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
-pub struct DKGOutput {
-    /// Participant index.
-    ///
-    /// Math: `i`.
-    pub idx: usize,
-
-    /// DKG threshold.
-    ///
-    /// Math: `t`.
-    pub t: usize,
-
-    /// Participant's final secret share.
-    ///
-    /// Math: tweaked secret share `u_i`.
-    pub secshare: Scalar,
-
-    /// Final threshold public key.
-    ///
-    /// Math: tweaked commitment to the aggregate secret, `C_0`.
-    pub threshold_pubkey: ProjectivePoint,
-
-    /// Final participant public shares.
-    ///
-    /// Math: `Y_i`.
-    pub pubshares: Vec<ProjectivePoint>,
 }
 
 #[derive(Clone, PartialEq, Eq)]

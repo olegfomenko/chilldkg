@@ -1,6 +1,7 @@
 use crate::crypto::certeq::CertEQTranscript;
 use crate::crypto::schnorr::SchnorrSignature;
 use k256::{ProjectivePoint, Scalar};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Participant -> Coordinator, Step 1.
 ///
@@ -84,4 +85,55 @@ pub struct CoordinatorMsg2 {
 pub struct RecoveryData {
     pub transcript: CertEQTranscript,
     pub cert: Vec<SchnorrSignature>,
+}
+
+/// CoordinatorDKGOutput contains the resulting output of coordinator after DKG.
+/// Before using it, please make sure that all parties finalized the results as well.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoordinatorDKGOutput {
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
+    /// Final threshold public key.
+    ///
+    /// Math: tweaked commitment to the aggregate secret, `C_0`.
+    pub threshold_pubkey: ProjectivePoint,
+
+    /// Final participant public shares.
+    ///
+    /// Math: `Y_i`.
+    pub pubshares: Vec<ProjectivePoint>,
+}
+
+/// DKGOutput contains the resulting output of participant after DKG.
+/// Note that the `secshare` field should be carefully stored,
+/// because it represents participant's part pf the secret key.
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+pub struct DKGOutput {
+    /// Participant index.
+    ///
+    /// Math: `i`.
+    pub idx: usize,
+
+    /// DKG threshold.
+    ///
+    /// Math: `t`.
+    pub t: usize,
+
+    /// Participant's final secret share.
+    ///
+    /// Math: tweaked secret share `u_i`.
+    pub secshare: Scalar,
+
+    /// Final threshold public key.
+    ///
+    /// Math: tweaked commitment to the aggregate secret, `C_0`.
+    pub threshold_pubkey: ProjectivePoint,
+
+    /// Final participant public shares.
+    ///
+    /// Math: `Y_i`.
+    pub pubshares: Vec<ProjectivePoint>,
 }
