@@ -1,3 +1,42 @@
+//! # ChillDKG
+//!
+//! High-level SDK for the ChillDKG distributed key generation protocol
+//! (BIP-FROST-DKG). This module wraps the lower-level state machines in
+//! [`party`] and [`coordinator`] behind two driver types, [`Participant`] and
+//! [`Coordinator`], that track the protocol phase for you and cannot be advanced
+//! out of order.
+//!
+//! A session runs in three messaging rounds:
+//! 1. every participant calls [`Participant::step1`] and sends its message to the
+//!    coordinator, which aggregates them with [`Coordinator::step1`];
+//! 2. every participant calls [`Participant::step2`] on the coordinator's reply
+//!    and sends its message back, which the coordinator finalizes with
+//!    [`Coordinator::step2`];
+//! 3. every participant calls [`Participant::finalize`] on the coordinator's
+//!    certificate to obtain its [`DKGOutput`] and
+//!    [`RecoveryData`].
+//!
+//! See the module-level types in [`msg`] for the wire messages exchanged between
+//! rounds.
+//!
+//! ## Handling secrets
+//!
+//! [`Participant::new`] returns the host secret key as a [`SecretScalar`], and
+//! the per-participant secret share lives in
+//! [`DKGOutput::secshare`](msg::DKGOutput::secshare). Both are long-lived secret
+//! key material: store them securely and keep them wrapped in zeroizing types
+//! until persisted.
+//!
+//! ## Handling failure
+//!
+//! An error from any step transitions the driver to a terminal *failed* state
+//! (see [`Participant::is_failed`]). **A failed step does not mean the session
+//! failed for everyone.** Another participant may still deem the session
+//! successful and use the resulting threshold public key. For that reason a
+//! participant **must not** erase its host secret key just because a step
+//! returned an error: it may later be shown [`RecoveryData`]
+//! and asked to recover its output via [`Participant::recover`].
+
 use crate::coordinator::recovery::recover;
 use crate::coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
 use crate::crypto::SecretScalar;
@@ -19,6 +58,13 @@ pub mod errors;
 pub mod msg;
 pub mod party;
 
+/// Driver for a single participant across a full ChillDKG session.
+///
+/// The participant is advanced one round at a time with [`Participant::step1`],
+/// [`Participant::step2`] and [`Participant::finalize`]. Each call consumes the
+/// current internal state and produces the next one, so a step can never be run
+/// twice or out of order; doing so returns an error and moves the participant to
+/// a terminal failed state.
 pub struct Participant {
     state: ParticipantStateValue,
 }
@@ -33,6 +79,12 @@ enum ParticipantStateValue {
 }
 
 impl Participant {
+    /// Creates a participant with a freshly sampled, non-zero host secret key.
+    ///
+    /// Returns the host secret key alongside the participant. The key is the
+    /// participant's long-term identity; store it securely (it is returned as a
+    /// [`SecretScalar`] so it is wiped from memory on drop) — it is required to
+    /// [`recover`](Participant::recover) the DKG output later.
     pub fn new(rng: &mut impl CryptoRngCore) -> (SecretScalar, Self) {
         let state = ParticipantInitialState::new(rng);
 
@@ -44,16 +96,35 @@ impl Participant {
         )
     }
 
+    /// Creates a participant from an existing host secret key.
+    ///
+    /// Use this to resume with a persisted key instead of sampling a new one via
+    /// [`new`](Participant::new). The caller is responsible for the secrecy and
+    /// non-zero-ness of `scalar`.
     pub fn new_with_secret(scalar: &Scalar) -> Self {
         Self {
             state: ParticipantStateValue::Initial(ParticipantInitialState::new_with_secret(scalar)),
         }
     }
 
+    /// Recovers a participant's DKG output from recovery data.
+    ///
+    /// Given the participant's host secret key and the
+    /// [`RecoveryData`] produced by a successful session, this
+    /// reconstructs the [`DKGOutput`] without re-running the
+    /// protocol. It is the fallback a participant uses when it did not observe
+    /// its own [`finalize`](Participant::finalize) but is later presented with
+    /// valid recovery data.
     pub fn recover(scalar: &Scalar, recovery_data: &RecoveryData) -> Result<DKGOutput> {
         party::recovery::recover(scalar, recovery_data)
     }
 
+    /// Runs the participant's first round.
+    ///
+    /// Takes the session parameters (host public keys, threshold, and per-session
+    /// randomness) and produces the [`ParticipantMsg1`] to
+    /// send to the coordinator. On error the participant moves to the failed
+    /// state; see the crate-level note on handling failure.
     pub fn step1(
         &mut self,
         msg: <ParticipantInitialState as ParticipantState>::Message,
@@ -91,6 +162,12 @@ impl Participant {
         }
     }
 
+    /// Runs the participant's second round.
+    ///
+    /// Takes the coordinator's aggregated first-round reply
+    /// ([`CoordinatorMsg1`]) plus auxiliary randomness and
+    /// produces the [`ParticipantMsg2`] to send back. On
+    /// error the participant moves to the failed state.
     pub fn step2(
         &mut self,
         msg: <ParticipantStep1State as ParticipantState>::Message,
@@ -128,6 +205,16 @@ impl Participant {
         }
     }
 
+    /// Completes the session for this participant.
+    ///
+    /// Verifies the coordinator's certificate
+    /// ([`CoordinatorMsg2`]) and, on success, returns the
+    /// participant's [`DKGOutput`] and the
+    /// [`RecoveryData`]. The output holds the secret share and
+    /// must be stored securely; the recovery data should also be persisted so the
+    /// output can be [`recover`](Participant::recover)ed later. Returning an error
+    /// moves the participant to the failed state but does **not** mean the session
+    /// failed for the group — do not erase the host secret key on error.
     pub fn finalize(
         &mut self,
         msg: <ParticipantStep2State as ParticipantState>::Message,
@@ -160,19 +247,31 @@ impl Participant {
         }
     }
 
+    /// Returns `true` if a step returned an error and the participant can no
+    /// longer be advanced. See the crate-level note: a failed participant does
+    /// not imply the session failed for the group.
     pub fn is_failed(&self) -> bool {
         matches!(self.state, ParticipantStateValue::Failed)
     }
 
+    /// Returns `true` once [`finalize`](Participant::finalize) has succeeded.
     pub fn is_succeed(&self) -> bool {
         matches!(self.state, ParticipantStateValue::Succeed)
     }
 
+    /// Returns `true` while the participant is still mid-session (neither failed
+    /// nor succeeded) and can accept the next step.
     pub fn is_active(&self) -> bool {
         !self.is_failed() && !self.is_succeed()
     }
 }
 
+/// Driver for the coordinator across a full ChillDKG session.
+///
+/// The coordinator aggregates the participants' round messages with
+/// [`Coordinator::step1`] and [`Coordinator::step2`]. Like [`Participant`], it is
+/// a linear state machine: steps run once, in order, and an error moves it to a
+/// terminal failed state. The coordinator only ever handles public data.
 pub struct Coordinator {
     state: CoordinatorStateValue,
 }
@@ -187,16 +286,33 @@ enum CoordinatorStateValue {
 }
 
 impl Coordinator {
+    /// Creates a coordinator for a session with the given participant host
+    /// public keys and threshold `t`.
+    ///
+    /// Returns an error if the parameters are invalid (e.g. `t` out of range or
+    /// duplicate/invalid host keys).
     pub fn new(host_pubkeys: Vec<ProjectivePoint>, t: usize) -> Result<Self> {
         Ok(Self {
             state: CoordinatorStateValue::Initial(CoordinatorInitialState::new(host_pubkeys, t)?),
         })
     }
 
+    /// Recovers the coordinator's public DKG output from recovery data.
+    ///
+    /// Unlike [`Participant::recover`], this needs no secret key: it reconstructs
+    /// the public [`CoordinatorDKGOutput`] (threshold
+    /// public key and public shares) from a successful session's
+    /// [`RecoveryData`].
     pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
         recover(recovery_data)
     }
 
+    /// Runs the coordinator's first round.
+    ///
+    /// Aggregates the participants' [`ParticipantMsg1`]
+    /// messages and produces the [`CoordinatorMsg1`] to
+    /// broadcast back to them. On error the coordinator moves to the failed
+    /// state.
     pub fn step1(
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,
@@ -233,6 +349,15 @@ impl Coordinator {
             )),
         }
     }
+    /// Completes the session on the coordinator side.
+    ///
+    /// Aggregates the participants' [`ParticipantMsg2`]
+    /// messages into the certificate [`CoordinatorMsg2`]
+    /// (to broadcast to the participants), and returns the public
+    /// [`CoordinatorDKGOutput`] and the
+    /// [`RecoveryData`]. The coordinator obtains its output
+    /// here, but the session is only truly successful once every participant has
+    /// finalized. On error the coordinator moves to the failed state.
     pub fn step2(
         &mut self,
         msg: <CoordinatorStep1State as CoordinatorState>::Message,
@@ -265,14 +390,19 @@ impl Coordinator {
         }
     }
 
+    /// Returns `true` if a step returned an error and the coordinator can no
+    /// longer be advanced.
     pub fn is_failed(&self) -> bool {
         matches!(self.state, CoordinatorStateValue::Failed)
     }
 
+    /// Returns `true` once [`step2`](Coordinator::step2) has succeeded.
     pub fn is_succeed(&self) -> bool {
         matches!(self.state, CoordinatorStateValue::Succeed)
     }
 
+    /// Returns `true` while the coordinator is still mid-session (neither failed
+    /// nor succeeded) and can accept the next step.
     pub fn is_active(&self) -> bool {
         !self.is_failed() && !self.is_succeed()
     }
@@ -303,7 +433,7 @@ mod tests {
         let (s4, mut p4) = Participant::new(&mut rng);
         let (s5, mut p5) = Participant::new(&mut rng);
 
-        let host_seckeys = [s1.clone(), s2.clone(), s3.clone(), s4.clone(), s5.clone()];
+        let host_seckeys = [s1, s2, s3, s4, s5];
 
         let host_keys: Vec<ProjectivePoint> = host_seckeys
             .iter()
