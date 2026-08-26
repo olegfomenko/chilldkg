@@ -85,7 +85,7 @@ an error instead of advancing to the next state.
 
 ### Coordinator States
 
-Each state transition for participant is implemented via
+Each state transition for coordinator is implemented via
 
 ```rust
 pub trait CoordinatorState: Sized {
@@ -139,28 +139,28 @@ const T: usize = 3;
 let mut rng = OsRng;
 
 // 1. Prepare params 
-let mut p = ParticipantInitialState::new( & mut rng);
+let party = ParticipantInitialState::new( & mut rng);
 // TODO: securely save p.s
 
 // 2. Execute step #1
 
 let random = [0u8; 32]; // TODO: generate good randomness 
-let (next, msg1) = p.next((host_pubkeys, T, random)) ?;
-p = next.unwrap();
+let (next, msg1) = p.next((host_pubkeys, T, random))?;
+let party = next.unwrap();
 
 // TODO: Share msg1 with Coordinator
 
 // 3. Execute step #2
 
 let aux_rand = [1u8; 32];
-let (next, msg2) = p.next((cmsg1, aux_rand)) ?;
-p = next.unwrap();
+let (next, msg2) = p.next((cmsg1, aux_rand))?;
+let party = next.unwrap();
 
 // TODO: Share msg2 with Coordinator
 
 // 4. Execute final check
 
-let (_, (participant_output, participant_recovery_data)) = p.next(cmsg2) ?;
+let (_, (participant_output, participant_recovery_data)) = p.next(cmsg2)?;
 
 // TODO: save somewhere participant_recovery_data and securely store private share in participant_output
 ```
@@ -175,10 +175,10 @@ const N: usize = 5;
 const T: usize = 3;
 
 // 1. Prepare params 
-let mut coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T) ?;
+let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
 
 // 2. Execute step #1
-let (coordinator, cmsg1) = coordinator.next(pmsg1s) ?;
+let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
 let coordinator = coordinator.unwrap();
 
 // TODO: share cmsg1 with all participants
@@ -187,7 +187,7 @@ let coordinator = coordinator.unwrap();
 
 // Coordinator obtains DKG output immediately. 
 // However, we should wait upon successful execution of the last message by each participant.
-let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s) ?;
+let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s)?;
 // TODO: share cmsg2 with all participants
 ```
 
@@ -209,14 +209,14 @@ let (host_seckey, mut party) = Participant::new( & mut rng);
 // TODO: Securely save host_seckey
 
 let random = [0u8; 32]; // TODO: generate good randomness
-let msg1 = party.step1((host_keys, T, random)) ?;
+let msg1 = party.step1((host_keys, T, random))?;
 // TODO: send msg1, receive msg1_resp from coordinator
 
 let aux = [0u8; 32]; // TODO: generate good randomness
-let msg2 = party.step2((msg1_resp, aux)) ?;
+let msg2 = party.step2((msg1_resp, aux))?;
 // TODO: send msg2, receive msg2_resp from coordinator
 
-let (output, recovery) = party.finalize(msg2_resp) ?;
+let (output, recovery) = party.finalize(msg2_resp)?;
 // Output contains your secure share, while recover contains public transcript and signatures
 // TODO: save somewhere recovery and securely store private share in output
 ```
@@ -227,16 +227,16 @@ The core for coordinator is as follows:
 const N: usize = 5;
 const T: usize = 3;
 
-let mut c = Coordinator::new(host_keys, T) ?;
+let mut c = Coordinator::new(host_keys, T)?;
 
 // TODO: receive messages from participants and put into the msg1 list
-let msg1_resp = c.step1(msg1) ?;
+let msg1_resp = c.step1(msg1)?;
 // TODO: share msg1_resp with all participants
 
 // TODO: receive messages from participants and put into the msg2 list
 // Coordinator obtains DKG output immediately. 
 // However, we should wait upon successful execution of the last message by each participant.
-let (msg2_resp, output, _) = c.step2(msg2) ?;
+let (msg2_resp, output, _) = c.step2(msg2)?;
 // TODO: send msg2_resp to all participants
 ```
 
@@ -246,9 +246,9 @@ follows:
 ```rust
 use chilldkg_rs::{Coordinator, Participant};
 
-let p_output_recovered = Participant::recover( & host_seckey, & recovery_data) ?; // For participant
+let p_output_recovered = Participant::recover( & host_seckey, & recovery_data)?; // For participant
 
-let p_output_recovered = Coordinator::recover( & recovery_data) ?; // For coordinator
+let c_output_recovered = Coordinator::recover( & recovery_data)?; // For coordinator
 ```
 
 ## Tests

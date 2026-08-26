@@ -30,12 +30,7 @@
 //! ## Handling failure
 //!
 //! An error from any step transitions the driver to a terminal *failed* state
-//! (see [`Participant::is_failed`]). **A failed step does not mean the session
-//! failed for everyone.** Another participant may still deem the session
-//! successful and use the resulting threshold public key. For that reason a
-//! participant **must not** erase its host secret key just because a step
-//! returned an error: it may later be shown [`RecoveryData`]
-//! and asked to recover its output via [`Participant::recover`].
+//! (see [`Participant::is_failed`]).
 
 use crate::coordinator::recovery::recover;
 use crate::coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
@@ -134,7 +129,11 @@ impl Participant {
             msg,
         )
         .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+            // Call on the SM's final state shouldn't change the state,
+            // so only change if we are active
+            if self.is_active() {
+                self.state = ParticipantStateValue::Failed;
+            }
         })?;
 
         self.state = next;
@@ -177,7 +176,11 @@ impl Participant {
             msg,
         )
         .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+            // Call on the SM's final state shouldn't change the state,
+            // so only change if we are active
+            if self.is_active() {
+                self.state = ParticipantStateValue::Failed;
+            }
         })?;
 
         self.state = next;
@@ -224,7 +227,11 @@ impl Participant {
             msg,
         )
         .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+            // Call on the SM's final state shouldn't change the state,
+            // so only change if we are active
+            if self.is_active() {
+                self.state = ParticipantStateValue::Failed;
+            }
         })?;
 
         self.state = ParticipantStateValue::Succeed;
@@ -262,7 +269,12 @@ impl Participant {
     /// Returns `true` while the participant is still mid-session (neither failed
     /// nor succeeded) and can accept the next step.
     pub fn is_active(&self) -> bool {
-        !self.is_failed() && !self.is_succeed()
+        matches!(
+            self.state,
+            ParticipantStateValue::Initial(_)
+                | ParticipantStateValue::Step1(_)
+                | ParticipantStateValue::Step2(_)
+        )
     }
 }
 
@@ -322,7 +334,11 @@ impl Coordinator {
             msg,
         )
         .inspect_err(|_| {
-            self.state = CoordinatorStateValue::Failed;
+            // Call on the SM's final state shouldn't change the state,
+            // so only change if we are active
+            if self.is_active() {
+                self.state = CoordinatorStateValue::Failed;
+            }
         })?;
 
         self.state = next;
@@ -367,7 +383,11 @@ impl Coordinator {
             msg,
         )
         .inspect_err(|_| {
-            self.state = CoordinatorStateValue::Failed;
+            // Call on the SM's final state shouldn't change the state,
+            // so only change if we are active
+            if self.is_active() {
+                self.state = CoordinatorStateValue::Failed;
+            }
         })?;
 
         self.state = CoordinatorStateValue::Succeed;
@@ -404,7 +424,10 @@ impl Coordinator {
     /// Returns `true` while the coordinator is still mid-session (neither failed
     /// nor succeeded) and can accept the next step.
     pub fn is_active(&self) -> bool {
-        !self.is_failed() && !self.is_succeed()
+        matches!(
+            self.state,
+            CoordinatorStateValue::Initial(_) | CoordinatorStateValue::Step1(_)
+        )
     }
 }
 

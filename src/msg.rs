@@ -109,7 +109,7 @@ pub struct CoordinatorDKGOutput {
 
 /// DKGOutput contains the resulting output of participant after DKG.
 /// Note that the `secshare` field should be carefully stored,
-/// because it represents participant's part pf the secret key.
+/// because it represents participant's part of the secret key.
 #[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct DKGOutput {
     /// Participant index.
