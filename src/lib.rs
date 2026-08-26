@@ -1,5 +1,6 @@
 use crate::coordinator::recovery::recover;
 use crate::coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
+use crate::crypto::SecretScalar;
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{
     CoordinatorDKGOutput, CoordinatorMsg1, CoordinatorMsg2, DKGOutput, ParticipantMsg1,
@@ -10,6 +11,7 @@ use crate::party::{
 };
 use k256::{ProjectivePoint, Scalar};
 use rand_core::CryptoRngCore;
+use zeroize::Zeroizing;
 
 pub mod coordinator;
 pub mod crypto;
@@ -31,11 +33,11 @@ enum ParticipantStateValue {
 }
 
 impl Participant {
-    pub fn new(rng: &mut impl CryptoRngCore) -> (Scalar, Self) {
+    pub fn new(rng: &mut impl CryptoRngCore) -> (SecretScalar, Self) {
         let state = ParticipantInitialState::new(rng);
 
         (
-            state.s,
+            Zeroizing::new(state.s),
             Self {
                 state: ParticipantStateValue::Initial(state),
             },
@@ -174,6 +176,8 @@ impl Participant {
 pub struct Coordinator {
     state: CoordinatorStateValue,
 }
+
+#[allow(clippy::large_enum_variant)]
 enum CoordinatorStateValue {
     Initial(CoordinatorInitialState),
     Step1(CoordinatorStep1State),
@@ -189,8 +193,8 @@ impl Coordinator {
         })
     }
 
-    pub fn recover(recovery_data: RecoveryData) -> Result<CoordinatorDKGOutput> {
-        recover(&recovery_data)
+    pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
+        recover(recovery_data)
     }
 
     pub fn step1(
@@ -299,15 +303,12 @@ mod tests {
         let (s4, mut p4) = Participant::new(&mut rng);
         let (s5, mut p5) = Participant::new(&mut rng);
 
-        let host_seckeys = vec![s1, s2, s3, s4, s5];
+        let host_seckeys = [s1.clone(), s2.clone(), s3.clone(), s4.clone(), s5.clone()];
 
-        let host_keys = vec![
-            ProjectivePoint::GENERATOR * s1,
-            ProjectivePoint::GENERATOR * s2,
-            ProjectivePoint::GENERATOR * s3,
-            ProjectivePoint::GENERATOR * s4,
-            ProjectivePoint::GENERATOR * s5,
-        ];
+        let host_keys: Vec<ProjectivePoint> = host_seckeys
+            .iter()
+            .map(|k| ProjectivePoint::GENERATOR * k.as_ref())
+            .collect();
 
         let mut c = Coordinator::new(host_keys.clone(), T).unwrap();
 
@@ -352,7 +353,7 @@ mod tests {
         let res4 = p4.finalize(msg2_resp.clone()).unwrap();
         let res5 = p5.finalize(msg2_resp.clone()).unwrap();
 
-        for (i, res) in vec![res1, res2, res3, res4, res5].iter().enumerate() {
+        for (i, res) in [res1, res2, res3, res4, res5].iter().enumerate() {
             let (p_output, recovery_data) = res;
             assert_eq!(
                 p_output.threshold_pubkey, output.threshold_pubkey,
@@ -369,9 +370,11 @@ mod tests {
             );
             println!("\t\tSecret share {:x}", p_output.secshare.to_bytes());
 
-            let p_output_recovered = ParticipantInitialState { s: host_seckeys[i] }
-                .recover(&recovery_data)
-                .unwrap();
+            let p_output_recovered = ParticipantInitialState {
+                s: *host_seckeys[i],
+            }
+            .recover(recovery_data)
+            .unwrap();
 
             println!(
                 "\t\tRecovered secret share {:x}",
