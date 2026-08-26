@@ -69,7 +69,7 @@ enum ParticipantStateValue {
     Step1(ParticipantStep1State),
     Step2(ParticipantStep2State),
     Failed,
-    Succeed,
+    Successful,
     Replaced, // An intermediate state between transitions
 }
 
@@ -124,16 +124,15 @@ impl Participant {
         &mut self,
         msg: <ParticipantInitialState as ParticipantState>::Message,
     ) -> Result<ParticipantMsg1> {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+
         let (next, pmsg1) = Self::step1_inner(
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
         .inspect_err(|_| {
-            // Call on the SM's final state shouldn't change the state,
-            // so only change if we are active
-            if self.is_active() {
-                self.state = ParticipantStateValue::Failed;
-            }
+            self.state = ParticipantStateValue::Failed;
         })?;
 
         self.state = next;
@@ -171,16 +170,15 @@ impl Participant {
         &mut self,
         msg: <ParticipantStep1State as ParticipantState>::Message,
     ) -> Result<ParticipantMsg2> {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+
         let (next, pmsg2) = Self::step2_inner(
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
         .inspect_err(|_| {
-            // Call on the SM's final state shouldn't change the state,
-            // so only change if we are active
-            if self.is_active() {
-                self.state = ParticipantStateValue::Failed;
-            }
+            self.state = ParticipantStateValue::Failed;
         })?;
 
         self.state = next;
@@ -222,19 +220,18 @@ impl Participant {
         &mut self,
         msg: <ParticipantStep2State as ParticipantState>::Message,
     ) -> Result<(DKGOutput, RecoveryData)> {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+
         let (out, recovery_data) = Self::finalize_inner(
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
         .inspect_err(|_| {
-            // Call on the SM's final state shouldn't change the state,
-            // so only change if we are active
-            if self.is_active() {
-                self.state = ParticipantStateValue::Failed;
-            }
+            self.state = ParticipantStateValue::Failed;
         })?;
 
-        self.state = ParticipantStateValue::Succeed;
+        self.state = ParticipantStateValue::Successful;
 
         Ok((out, recovery_data))
     }
@@ -262,19 +259,30 @@ impl Participant {
     }
 
     /// Returns `true` once [`finalize`](Participant::finalize) has succeeded.
-    pub fn is_succeed(&self) -> bool {
-        matches!(self.state, ParticipantStateValue::Succeed)
+    pub fn is_successful(&self) -> bool {
+        matches!(self.state, ParticipantStateValue::Successful)
     }
 
     /// Returns `true` while the participant is still mid-session (neither failed
-    /// nor succeeded) and can accept the next step.
+    /// nor successful) and can accept the next step.
     pub fn is_active(&self) -> bool {
         matches!(
             self.state,
             ParticipantStateValue::Initial(_)
                 | ParticipantStateValue::Step1(_)
                 | ParticipantStateValue::Step2(_)
+                | ParticipantStateValue::Replaced
         )
+    }
+
+    fn only_active(&self) -> Result<()> {
+        if !self.is_active() {
+            return Err(ChillDkgError::Runtime(
+                "can not not apply message to the terminal state".into(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -293,7 +301,7 @@ enum CoordinatorStateValue {
     Initial(CoordinatorInitialState),
     Step1(CoordinatorStep1State),
     Failed,
-    Succeed,
+    Successful,
     Replaced, // An intermediate state between transitions
 }
 
@@ -329,16 +337,14 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,
     ) -> Result<CoordinatorMsg1> {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
         let (next, cmsg1) = Self::step1_inner(
             std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
             msg,
         )
         .inspect_err(|_| {
-            // Call on the SM's final state shouldn't change the state,
-            // so only change if we are active
-            if self.is_active() {
-                self.state = CoordinatorStateValue::Failed;
-            }
+            self.state = CoordinatorStateValue::Failed;
         })?;
 
         self.state = next;
@@ -378,19 +384,18 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorStep1State as CoordinatorState>::Message,
     ) -> Result<(CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData)> {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+
         let (cmsg2, out, recovery_data) = Self::step2_inner(
             std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
             msg,
         )
         .inspect_err(|_| {
-            // Call on the SM's final state shouldn't change the state,
-            // so only change if we are active
-            if self.is_active() {
-                self.state = CoordinatorStateValue::Failed;
-            }
+            self.state = CoordinatorStateValue::Failed;
         })?;
 
-        self.state = CoordinatorStateValue::Succeed;
+        self.state = CoordinatorStateValue::Successful;
 
         Ok((cmsg2, out, recovery_data))
     }
@@ -417,17 +422,29 @@ impl Coordinator {
     }
 
     /// Returns `true` once [`step2`](Coordinator::step2) has succeeded.
-    pub fn is_succeed(&self) -> bool {
-        matches!(self.state, CoordinatorStateValue::Succeed)
+    pub fn is_successful(&self) -> bool {
+        matches!(self.state, CoordinatorStateValue::Successful)
     }
 
     /// Returns `true` while the coordinator is still mid-session (neither failed
-    /// nor succeeded) and can accept the next step.
+    /// nor successful) and can accept the next step.
     pub fn is_active(&self) -> bool {
         matches!(
             self.state,
-            CoordinatorStateValue::Initial(_) | CoordinatorStateValue::Step1(_)
+            CoordinatorStateValue::Initial(_)
+                | CoordinatorStateValue::Step1(_)
+                | CoordinatorStateValue::Replaced
         )
+    }
+
+    fn only_active(&self) -> Result<()> {
+        if !self.is_active() {
+            return Err(ChillDkgError::Runtime(
+                "can not not apply message to the terminal state".into(),
+            ));
+        }
+
+        Ok(())
     }
 }
 
