@@ -60,10 +60,12 @@ pub mod party;
 /// current internal state and produces the next one, so a step can never be run
 /// twice or out of order; doing so returns an error and moves the participant to
 /// a terminal failed state.
+#[derive(Clone)]
 pub struct Participant {
     state: ParticipantStateValue,
 }
 
+#[derive(Clone, PartialEq, Eq)]
 enum ParticipantStateValue {
     Initial(ParticipantInitialState),
     Step1(ParticipantStep1State),
@@ -96,10 +98,16 @@ impl Participant {
     /// Use this to resume with a persisted key instead of sampling a new one via
     /// [`new`](Participant::new). The caller is responsible for the secrecy and
     /// non-zero-ness of `scalar`.
-    pub fn new_with_secret(scalar: &Scalar) -> Self {
-        Self {
-            state: ParticipantStateValue::Initial(ParticipantInitialState::new_with_secret(scalar)),
+    pub fn new_with_secret(scalar: &Scalar) -> Result<Self> {
+        if bool::from(scalar.is_zero()) {
+            return Err(ChillDkgError::HostSeckey(
+                "host secret key can't be zero".into(),
+            ));
         }
+
+        Ok(Self {
+            state: ParticipantStateValue::Initial(ParticipantInitialState::new_with_secret(scalar)),
+        })
     }
 
     /// Recovers a participant's DKG output from recovery data.
@@ -214,8 +222,7 @@ impl Participant {
     /// [`RecoveryData`]. The output holds the secret share and
     /// must be stored securely; the recovery data should also be persisted so the
     /// output can be [`recover`](Participant::recover)ed later. Returning an error
-    /// moves the participant to the failed state but does **not** mean the session
-    /// failed for the group — do not erase the host secret key on error.
+    /// moves the participant to the failed state.
     pub fn finalize(
         &mut self,
         msg: <ParticipantStep2State as ParticipantState>::Message,
@@ -292,11 +299,13 @@ impl Participant {
 /// [`Coordinator::step1`] and [`Coordinator::step2`]. Like [`Participant`], it is
 /// a linear state machine: steps run once, in order, and an error moves it to a
 /// terminal failed state. The coordinator only ever handles public data.
+#[derive(Clone)]
 pub struct Coordinator {
     state: CoordinatorStateValue,
 }
 
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone, PartialEq, Eq)]
 enum CoordinatorStateValue {
     Initial(CoordinatorInitialState),
     Step1(CoordinatorStep1State),

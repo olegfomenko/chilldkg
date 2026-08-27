@@ -145,22 +145,22 @@ let party = ParticipantInitialState::new( & mut rng);
 // 2. Execute step #1
 
 let random = [0u8; 32]; // TODO: generate good randomness 
-let (next, msg1) = p.next((host_pubkeys, T, random))?;
+let (next, msg1) = party.next((host_pubkeys, T, random))?;
 let party = next.unwrap();
 
-// TODO: Share msg1 with Coordinator
+// TODO: Share msg1 with Coordinator, receive cmsg1
 
 // 3. Execute step #2
 
 let aux_rand = [1u8; 32];
-let (next, msg2) = p.next((cmsg1, aux_rand))?;
+let (next, msg2) = party.next((cmsg1, aux_rand))?;
 let party = next.unwrap();
 
-// TODO: Share msg2 with Coordinator
+// TODO: Share msg2 with Coordinator, receive cmsg2
 
 // 4. Execute final check
 
-let (_, (participant_output, participant_recovery_data)) = p.next(cmsg2)?;
+let (_, (participant_output, participant_recovery_data)) = party.next(cmsg2)?;
 
 // TODO: save somewhere participant_recovery_data and securely store private share in participant_output
 ```
@@ -177,11 +177,12 @@ const T: usize = 3;
 // 1. Prepare params 
 let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
 
+// TODO: collect pmsg1 from participants
 // 2. Execute step #1
 let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
 let coordinator = coordinator.unwrap();
 
-// TODO: share cmsg1 with all participants
+// TODO: share cmsg1 with all participants, collect pmsg2 from participants
 
 // 3. Execute step #2
 
