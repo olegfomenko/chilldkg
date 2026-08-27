@@ -32,7 +32,6 @@
 //! An error from any step transitions the driver to a terminal *failed* state
 //! (see [`Participant::is_failed`]).
 
-use crate::coordinator::recovery::recover;
 use crate::coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
 use crate::crypto::SecretScalar;
 use crate::errors::{ChillDkgError, Result};
@@ -333,7 +332,7 @@ impl Coordinator {
     /// public key and public shares) from a successful session's
     /// [`RecoveryData`].
     pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
-        recover(recovery_data)
+        coordinator::recovery::recover(recovery_data)
     }
 
     /// Runs the coordinator's first round.
