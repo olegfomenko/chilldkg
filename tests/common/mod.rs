@@ -1,5 +1,6 @@
 use chilldkg_rs::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg_rs::crypto::ec::{EC_SCALAR_BYTES_SIZE, parse_scalar_from_bytes};
+use chilldkg_rs::crypto::schnorr::SCHNORR_SIG_BYTES_SIZE;
 use chilldkg_rs::errors::{ChillDkgError, Result};
 use chilldkg_rs::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
 use k256::elliptic_curve::Group;
@@ -78,11 +79,10 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
 }
 
 pub fn parse_coordinator_msg2(hex: &str) -> Result<CoordinatorMsg2> {
+    let bytes = decode(hex)?;
+
     Ok(CoordinatorMsg2 {
-        cert: decode(hex)?
-            .chunks_exact(64)
-            .map(<[u8; 64]>::try_from)
-            .collect::<std::result::Result<Vec<_>, _>>()?,
+        cert: bytes.as_chunks::<SCHNORR_SIG_BYTES_SIZE>().0.to_vec(),
     })
 }
 

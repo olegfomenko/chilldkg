@@ -4,7 +4,7 @@ use crate::common::{parse_point_hex, parse_scalar_hex};
 use chilldkg_rs::coordinator::recovery::recover as recover_coordinator;
 use chilldkg_rs::crypto::certeq::CertEQTranscript;
 use chilldkg_rs::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
-use chilldkg_rs::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature};
+use chilldkg_rs::crypto::schnorr::SCHNORR_SIG_BYTES_SIZE;
 use chilldkg_rs::errors::{ChillDkgError, Result};
 use chilldkg_rs::msg::RecoveryData;
 use chilldkg_rs::party::recovery::recover as recover_participant;
@@ -167,9 +167,9 @@ fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<Recovery
     Ok(RecoveryData {
         transcript,
         cert: bytes[transcript_len..]
-            .chunks_exact(SCHNORR_SIG_BYTES_SIZE)
-            .map(SchnorrSignature::try_from)
-            .collect::<std::result::Result<Vec<_>, _>>()?,
+            .as_chunks::<SCHNORR_SIG_BYTES_SIZE>()
+            .0
+            .to_vec(),
     })
 }
 
