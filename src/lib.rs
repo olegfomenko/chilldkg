@@ -52,18 +52,6 @@ pub mod errors;
 pub mod msg;
 pub mod party;
 
-macro_rules! invalid_state {
-    () => {
-        ChillDkgError::Runtime("can not apply message to the given state".into())
-    };
-    (terminal) => {
-        ChillDkgError::Runtime("can not apply message to the terminal state".into())
-    };
-    (next) => {
-        ChillDkgError::Runtime("invalid next state after applying message".into())
-    };
-}
-
 /// Driver for a single participant across a full ChillDKG session.
 ///
 /// The participant is advanced one round at a time with [`Participant::step1`],
@@ -167,12 +155,15 @@ impl Participant {
             ParticipantStateValue::Initial(state) => {
                 let (next, pmsg1) = state.next(msg)?;
 
-                let next_state =
-                    ParticipantStateValue::Step1(next.ok_or_else(|| invalid_state!(next))?);
+                let next_state = ParticipantStateValue::Step1(next.ok_or_else(|| {
+                    ChillDkgError::Runtime("invalid next state after applying message".into())
+                })?);
 
                 Ok((next_state, pmsg1))
             }
-            _ => Err(invalid_state!()),
+            _ => Err(ChillDkgError::Runtime(
+                "can not apply message to the given state".into(),
+            )),
         }
     }
 
@@ -210,12 +201,15 @@ impl Participant {
             ParticipantStateValue::Step1(state) => {
                 let (next, pmsg1) = state.next(msg)?;
 
-                let next_state =
-                    ParticipantStateValue::Step2(next.ok_or_else(|| invalid_state!(next))?);
+                let next_state = ParticipantStateValue::Step2(next.ok_or_else(|| {
+                    ChillDkgError::Runtime("invalid next state after applying message".into())
+                })?);
 
                 Ok((next_state, pmsg1))
             }
-            _ => Err(invalid_state!()),
+            _ => Err(ChillDkgError::Runtime(
+                "can not apply message to the given state".into(),
+            )),
         }
     }
 
@@ -257,7 +251,9 @@ impl Participant {
                 let (_, res) = state.next(msg)?;
                 Ok(res)
             }
-            _ => Err(invalid_state!()),
+            _ => Err(ChillDkgError::Runtime(
+                "can not apply message to the given state".into(),
+            )),
         }
     }
 
@@ -296,7 +292,9 @@ impl Participant {
 
     fn only_active(&self) -> Result<()> {
         if !self.is_active() {
-            return Err(invalid_state!(terminal));
+            return Err(ChillDkgError::Runtime(
+                "can not apply message to the terminal state".into(),
+            ));
         }
 
         Ok(())
@@ -379,12 +377,15 @@ impl Coordinator {
             CoordinatorStateValue::Initial(state) => {
                 let (next, cmsg1) = state.next(msg)?;
 
-                let next_state =
-                    CoordinatorStateValue::Step1(next.ok_or_else(|| invalid_state!(next))?);
+                let next_state = CoordinatorStateValue::Step1(next.ok_or_else(|| {
+                    ChillDkgError::Runtime("invalid next state after applying message".into())
+                })?);
 
                 Ok((next_state, cmsg1))
             }
-            _ => Err(invalid_state!()),
+            _ => Err(ChillDkgError::Runtime(
+                "can not apply message to the given state".into(),
+            )),
         }
     }
     /// Completes the session on the coordinator side.
@@ -425,7 +426,9 @@ impl Coordinator {
                 let (_, res) = state.next(msg)?;
                 Ok(res)
             }
-            _ => Err(invalid_state!()),
+            _ => Err(ChillDkgError::Runtime(
+                "can not apply message to the given state".into(),
+            )),
         }
     }
 
@@ -462,7 +465,9 @@ impl Coordinator {
 
     fn only_active(&self) -> Result<()> {
         if !self.is_active() {
-            return Err(invalid_state!(terminal));
+            return Err(ChillDkgError::Runtime(
+                "can not apply message to the terminal state".into(),
+            ));
         }
 
         Ok(())
