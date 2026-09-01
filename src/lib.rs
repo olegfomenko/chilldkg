@@ -52,6 +52,18 @@ pub mod errors;
 pub mod msg;
 pub mod party;
 
+macro_rules! invalid_state {
+    () => {
+        ChillDkgError::Runtime("can not apply message to the given state".into())
+    };
+    (terminal) => {
+        ChillDkgError::Runtime("can not apply message to the terminal state".into())
+    };
+    (next) => {
+        ChillDkgError::Runtime("invalid next state after applying message".into())
+    };
+}
+
 /// Driver for a single participant across a full ChillDKG session.
 ///
 /// The participant is advanced one round at a time with [`Participant::step1`],
@@ -69,7 +81,7 @@ enum ParticipantStateValue {
     Initial(ParticipantInitialState),
     Step1(ParticipantStep1State),
     Step2(ParticipantStep2State),
-    Failed,
+    Failed(ChillDkgError),
     Successful,
     Replaced, // An intermediate state between transitions
 }
@@ -138,8 +150,8 @@ impl Participant {
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
-        .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+        .inspect_err(|e| {
+            self.state = ParticipantStateValue::Failed(e.clone());
         })?;
 
         self.state = next;
@@ -155,15 +167,12 @@ impl Participant {
             ParticipantStateValue::Initial(state) => {
                 let (next, pmsg1) = state.next(msg)?;
 
-                let next_state = ParticipantStateValue::Step1(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
+                let next_state =
+                    ParticipantStateValue::Step1(next.ok_or_else(|| invalid_state!(next))?);
 
                 Ok((next_state, pmsg1))
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            _ => Err(invalid_state!()),
         }
     }
 
@@ -184,8 +193,8 @@ impl Participant {
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
-        .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+        .inspect_err(|e| {
+            self.state = ParticipantStateValue::Failed(e.clone());
         })?;
 
         self.state = next;
@@ -201,15 +210,12 @@ impl Participant {
             ParticipantStateValue::Step1(state) => {
                 let (next, pmsg1) = state.next(msg)?;
 
-                let next_state = ParticipantStateValue::Step2(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
+                let next_state =
+                    ParticipantStateValue::Step2(next.ok_or_else(|| invalid_state!(next))?);
 
                 Ok((next_state, pmsg1))
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            _ => Err(invalid_state!()),
         }
     }
 
@@ -233,8 +239,8 @@ impl Participant {
             std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
             msg,
         )
-        .inspect_err(|_| {
-            self.state = ParticipantStateValue::Failed;
+        .inspect_err(|e| {
+            self.state = ParticipantStateValue::Failed(e.clone());
         })?;
 
         self.state = ParticipantStateValue::Successful;
@@ -251,9 +257,7 @@ impl Participant {
                 let (_, res) = state.next(msg)?;
                 Ok(res)
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            _ => Err(invalid_state!()),
         }
     }
 
@@ -261,7 +265,16 @@ impl Participant {
     /// longer be advanced. See the crate-level note: a failed participant does
     /// not imply the session failed for the group.
     pub fn is_failed(&self) -> bool {
-        matches!(self.state, ParticipantStateValue::Failed)
+        matches!(self.state, ParticipantStateValue::Failed(_))
+    }
+
+    /// Returns `Some(ChillDkgError)` if current state
+    /// is `ParticipantStateValue::Failed` and None otherwise.
+    pub fn failure(&self) -> Option<&ChillDkgError> {
+        match &self.state {
+            ParticipantStateValue::Failed(e) => Some(e),
+            _ => None,
+        }
     }
 
     /// Returns `true` once [`finalize`](Participant::finalize) has succeeded.
@@ -283,9 +296,7 @@ impl Participant {
 
     fn only_active(&self) -> Result<()> {
         if !self.is_active() {
-            return Err(ChillDkgError::Runtime(
-                "can not not apply message to the terminal state".into(),
-            ));
+            return Err(invalid_state!(terminal));
         }
 
         Ok(())
@@ -308,7 +319,7 @@ pub struct Coordinator {
 enum CoordinatorStateValue {
     Initial(CoordinatorInitialState),
     Step1(CoordinatorStep1State),
-    Failed,
+    Failed(ChillDkgError),
     Successful,
     Replaced, // An intermediate state between transitions
 }
@@ -351,8 +362,8 @@ impl Coordinator {
             std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
             msg,
         )
-        .inspect_err(|_| {
-            self.state = CoordinatorStateValue::Failed;
+        .inspect_err(|e| {
+            self.state = CoordinatorStateValue::Failed(e.clone());
         })?;
 
         self.state = next;
@@ -368,15 +379,12 @@ impl Coordinator {
             CoordinatorStateValue::Initial(state) => {
                 let (next, cmsg1) = state.next(msg)?;
 
-                let next_state = CoordinatorStateValue::Step1(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
+                let next_state =
+                    CoordinatorStateValue::Step1(next.ok_or_else(|| invalid_state!(next))?);
 
                 Ok((next_state, cmsg1))
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            _ => Err(invalid_state!()),
         }
     }
     /// Completes the session on the coordinator side.
@@ -399,8 +407,8 @@ impl Coordinator {
             std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
             msg,
         )
-        .inspect_err(|_| {
-            self.state = CoordinatorStateValue::Failed;
+        .inspect_err(|e| {
+            self.state = CoordinatorStateValue::Failed(e.clone());
         })?;
 
         self.state = CoordinatorStateValue::Successful;
@@ -417,16 +425,23 @@ impl Coordinator {
                 let (_, res) = state.next(msg)?;
                 Ok(res)
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            _ => Err(invalid_state!()),
         }
     }
 
     /// Returns `true` if a step returned an error and the coordinator can no
     /// longer be advanced.
     pub fn is_failed(&self) -> bool {
-        matches!(self.state, CoordinatorStateValue::Failed)
+        matches!(self.state, CoordinatorStateValue::Failed(_))
+    }
+
+    /// Returns `Some(ChillDkgError)` if current state
+    /// is `CoordinatorStateValue::Failed` and None otherwise.
+    pub fn failure(&self) -> Option<&ChillDkgError> {
+        match &self.state {
+            CoordinatorStateValue::Failed(e) => Some(e),
+            _ => None,
+        }
     }
 
     /// Returns `true` once [`step2`](Coordinator::step2) has succeeded.
@@ -447,9 +462,7 @@ impl Coordinator {
 
     fn only_active(&self) -> Result<()> {
         if !self.is_active() {
-            return Err(ChillDkgError::Runtime(
-                "can not not apply message to the terminal state".into(),
-            ));
+            return Err(invalid_state!(terminal));
         }
 
         Ok(())
