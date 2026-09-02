@@ -85,7 +85,7 @@ an error instead of advancing to the next state.
 
 ### Coordinator States
 
-Each state transition for participant is implemented via
+Each state transition for coordinator is implemented via
 
 ```rust
 pub trait CoordinatorState: Sized {
@@ -113,112 +113,143 @@ an error instead of advancing to the next state.
 
 ## Example
 
+All messages are defined in `chilldkg_rs::msg::`. The outputs are
+`chilldkg_rs::msg::CoordinatorDKGOutput` and `chilldkg_rs::msg::DKGOutput`. The recovery data is
+`chilldkg_rs::msg::RecoveryData`.
+
+### State-machine level
+
+The low-level state machine is exposed and can be used as well. Check tests in [lib.rs](./src/lib.rs).
+You may need the following imports:
+
 ```rust
-use chilldkg::coordinator::{CoordinatorInitialState, CoordinatorState};
-use chilldkg::msg::{ParticipantMsg1, ParticipantMsg2};
-use chilldkg::party::{
+use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
+use chilldkg_rs::msg::*;
+use chilldkg_rs::party::{
     ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
 };
-use k256::ProjectivePoint;
-use rand_core::OsRng;
+```
 
-fn main() -> anyhow::Result<()> {
-    const N: usize = 5;
-    const T: usize = 3;
+Example for Participant:
 
-    let mut rng = OsRng;
+```rust
+const N: usize = 5;
+const T: usize = 3;
 
+let mut rng = OsRng;
 
-    // 1. Prepare params 
+// 1. Prepare params 
+let party = ParticipantInitialState::new( & mut rng);
+// TODO: securely save p.s
 
-    let participants: Vec<_> = (0..N)
-        .map(|_| ParticipantInitialState::new(&mut rng))
-        .collect();
+// 2. Execute step #1
 
-    // TODO: Securely save `participants[i].s`
+let random = [0u8; 32]; // TODO: generate good randomness 
+let (next, msg1) = party.next((host_pubkeys, T, random))?;
+let party = next.unwrap();
 
-    let host_pubkeys: Vec<ProjectivePoint> =
-        participants.iter().map(|p| p.get_host_key()).collect();
+// TODO: Share msg1 with Coordinator, receive cmsg1
 
-    let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
+// 3. Execute step #2
 
-    // 2. Execute step #1
+let aux_rand = [1u8; 32];
+let (next, msg2) = party.next((cmsg1, aux_rand))?;
+let party = next.unwrap();
 
-    let mut pmsg1s: Vec<ParticipantMsg1> = Vec::with_capacity(N);
-    let participants: Vec<ParticipantStep1State> = participants
-        .into_iter()
-        .map(|p| {
-            let random = [0u8; 32]; // TODO: generate good randomness 
-            let (next, msg) = p.next((host_pubkeys.clone(), T, random))?;
-            pmsg1s.push(msg);
-            Ok(next.unwrap())
-        })
-        .collect::<anyhow::Result<_>>()?;
+// TODO: Share msg2 with Coordinator, receive cmsg2
 
-    let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
-    let coordinator = coordinator.unwrap();
+// 4. Execute final check
 
-    // 3. Execute step #2
+let (_, (participant_output, participant_recovery_data)) = party.next(cmsg2)?;
 
-    let mut pmsg2s: Vec<ParticipantMsg2> = Vec::with_capacity(N);
-    let participants: Vec<ParticipantStep2State> = participants
-        .into_iter()
-        .map(|p| {
-            let aux_rand = [1u8; 32];
-            let (next, msg) = p.next((cmsg1.clone(), aux_rand))?;
-            pmsg2s.push(msg);
-            Ok(next.unwrap())
-        })
-        .collect::<anyhow::Result<_>>()?;
-
-    // Coordinator obtains DKG output immediately. 
-    // However, we should wait upon successful execution of the last message by each participant.
-    let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s)?;
-
-    // 4. Execute final check
-
-    for participant in participants {
-        // Obtain DKG result from each participant.
-        let (_, (participant_output, participant_recovery_data)) =
-            participant.next(cmsg2.clone())?;
-
-        // TODO: Securely save `participant_output.secshare`
-
-        // Public data should be the same across all participants and coordinator.
-        assert_eq!(
-            participant_output.threshold_pubkey,
-            coordinator_output.threshold_pubkey
-        );
-        assert_eq!(participant_output.pubshares, coordinator_output.pubshares);
-        assert_eq!(participant_recovery_data, recovery_data);
-    }
-
-    Ok(())
-}
+// TODO: save somewhere participant_recovery_data and securely store private share in participant_output
 ```
 
 In real use, `random` and `aux_rand` must be fresh 32-byte randomness values.
 The all-zero arrays above are only to keep the example short.
 
-### Recovery
+Example for Coordinator:
+
+```rust
+const N: usize = 5;
+const T: usize = 3;
+
+// 1. Prepare params 
+let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
+
+// TODO: collect pmsg1 from participants
+// 2. Execute step #1
+let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
+let coordinator = coordinator.unwrap();
+
+// TODO: share cmsg1 with all participants, collect pmsg2 from participants
+
+// 3. Execute step #2
+
+// Coordinator obtains DKG output immediately. 
+// However, we should wait upon successful execution of the last message by each participant.
+let (_, (cmsg2, coordinator_output, recovery_data)) = coordinator.next(pmsg2s)?;
+// TODO: share cmsg2 with all participants
+```
+
+### Crate-level
+
+For engineers convenience we also introduce high-level SDK over state-machine. You may need the following imports:
+
+```rust
+use chilldkg_rs::{Coordinator, Participant};
+```
+
+Then, the code for participant is:
+
+```rust
+const N: usize = 5;
+const T: usize = 3;
+
+let (host_seckey, mut party) = Participant::new( & mut rng);
+// TODO: Securely save host_seckey
+
+let random = [0u8; 32]; // TODO: generate good randomness
+let msg1 = party.step1((host_keys, T, random))?;
+// TODO: send msg1, receive msg1_resp from coordinator
+
+let aux = [0u8; 32]; // TODO: generate good randomness
+let msg2 = party.step2((msg1_resp, aux))?;
+// TODO: send msg2, receive msg2_resp from coordinator
+
+let (output, recovery) = party.finalize(msg2_resp)?;
+// Output contains your secure share, while recover contains public transcript and signatures
+// TODO: save somewhere recovery and securely store private share in output
+```
+
+The core for coordinator is as follows:
+
+```rust
+const N: usize = 5;
+const T: usize = 3;
+
+let mut c = Coordinator::new(host_keys, T)?;
+
+// TODO: receive messages from participants and put into the msg1 list
+let msg1_resp = c.step1(msg1)?;
+// TODO: share msg1_resp with all participants
+
+// TODO: receive messages from participants and put into the msg2 list
+// Coordinator obtains DKG output immediately. 
+// However, we should wait upon successful execution of the last message by each participant.
+let (msg2_resp, output, _) = c.step2(msg2)?;
+// TODO: send msg2_resp to all participants
+```
 
 To recover DKG results on the participants side, you have to provide participant's host secret key and recovery data as
 follows:
 
 ```rust
-let p_output_recovered: DKGOutput = ParticipantInitialState { s: host_seckeys[i] }
-.recover( & recovery_data)
-.unwrap();
-```
+use chilldkg_rs::{Coordinator, Participant};
 
-To recover DKG results on the coordinator's side you have to provide recovery data as follows:
-```rust
-let c_output_recovered: CoordinatorDKGOutput = CoordinatorInitialState {
-    t: T, // Threshold
-    host_pubkeys: host_keys, // Participants public keys
-}
-.recover(&recovery_data)
-.unwrap();
+let p_output_recovered = Participant::recover( & host_seckey, & recovery_data)?; // For participant
+
+let c_output_recovered = Coordinator::recover( & recovery_data)?; // For coordinator
 ```
 
 ## Tests

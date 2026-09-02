@@ -90,18 +90,25 @@ pub fn even_y_point(point: &ProjectivePoint) -> ProjectivePoint {
 }
 
 /// Deserializes a compressed SEC1 secp256k1 point.
+/// Does not accept identity point.
 pub fn decompress_default(bytes: &CompressedPubKey) -> Option<ProjectivePoint> {
     let encoded = k256::EncodedPoint::from_bytes(bytes).ok()?;
     let affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded))?;
-
     Some(ProjectivePoint::from(affine))
 }
 
 /// Default secp256k1 point compression. Outputs 33-byte compressed point.
+/// Accepts infinity point.
 pub fn compress_default(point: &ProjectivePoint) -> CompressedPubKey {
-    let encoded = point.to_affine().to_encoded_point(true);
     let mut out = [0u8; COMPRESSED_POINT_BYTES_SIZE];
-    out.copy_from_slice(encoded.as_bytes());
+    let encoded = point.to_affine().to_encoded_point(true);
+    let bytes = encoded.as_bytes();
+    if bytes.len() == COMPRESSED_POINT_BYTES_SIZE {
+        out.copy_from_slice(bytes);
+    }
+
+    // identity stays all-zero, matching the reference's
+    // to_bytes_compressed_with_infinity
     out
 }
 

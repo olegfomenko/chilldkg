@@ -4,7 +4,7 @@ use crate::chill_dkg_ensure;
 use crate::coordinator::recovery::recover;
 use crate::crypto::certeq::CertEQTranscript;
 use crate::errors::{ChillDkgError, Result};
-use crate::msg::{ParticipantMsg1, RecoveryData};
+use crate::msg::{CoordinatorDKGOutput, ParticipantMsg1, RecoveryData};
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
@@ -118,24 +118,6 @@ impl CoordinatorInitialState {
     pub fn recover(&self, recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
         recover(recovery_data)
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoordinatorDKGOutput {
-    /// DKG threshold.
-    ///
-    /// Math: `t`.
-    pub t: usize,
-
-    /// Final threshold public key.
-    ///
-    /// Math: tweaked commitment to the aggregate secret, `C_0`.
-    pub threshold_pubkey: ProjectivePoint,
-
-    /// Final participant public shares.
-    ///
-    /// Math: `Y_i`.
-    pub pubshares: Vec<ProjectivePoint>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
