@@ -139,7 +139,7 @@ const T: usize = 3;
 let mut rng = OsRng;
 
 // 1. Prepare params 
-let party = ParticipantInitialState::new( & mut rng);
+let party = ParticipantInitialState::new(&mut rng);
 // TODO: securely save p.s
 
 // 2. Execute step #1
@@ -152,8 +152,8 @@ let party = next.unwrap();
 
 // 3. Execute step #2
 
-let aux_rand = [1u8; 32];
-let (next, msg2) = party.next((cmsg1, aux_rand))?;
+let aux = [0u8; 32];
+let (next, msg2) = party.next((cmsg1, aux))?;
 let party = next.unwrap();
 
 // TODO: Share msg2 with Coordinator, receive cmsg2
@@ -179,8 +179,8 @@ let coordinator = CoordinatorInitialState::new(host_pubkeys.clone(), T)?;
 
 // TODO: collect pmsg1 from participants
 // 2. Execute step #1
-let (coordinator, cmsg1) = coordinator.next(pmsg1s)?;
-let coordinator = coordinator.unwrap();
+let (next, cmsg1) = coordinator.next(pmsg1s)?;
+let coordinator = next.unwrap();
 
 // TODO: share cmsg1 with all participants, collect pmsg2 from participants
 
@@ -206,7 +206,7 @@ Then, the code for participant is:
 const N: usize = 5;
 const T: usize = 3;
 
-let (host_seckey, mut party) = Participant::new( & mut rng);
+let (host_seckey, mut party) = Participant::new(&mut rng);
 // TODO: Securely save host_seckey
 
 let random = [0u8; 32]; // TODO: generate good randomness
@@ -228,16 +228,16 @@ The core for coordinator is as follows:
 const N: usize = 5;
 const T: usize = 3;
 
-let mut c = Coordinator::new(host_keys, T)?;
+let mut coordinator = Coordinator::new(host_keys, T)?;
 
 // TODO: receive messages from participants and put into the msg1 list
-let msg1_resp = c.step1(msg1)?;
+let msg1_resp = coordinator.step1(msg1)?;
 // TODO: share msg1_resp with all participants
 
 // TODO: receive messages from participants and put into the msg2 list
 // Coordinator obtains DKG output immediately. 
 // However, we should wait upon successful execution of the last message by each participant.
-let (msg2_resp, output, _) = c.step2(msg2)?;
+let (msg2_resp, output, _) = coordinator.step2(msg2)?;
 // TODO: send msg2_resp to all participants
 ```
 
@@ -247,9 +247,9 @@ follows:
 ```rust
 use chilldkg_rs::{Coordinator, Participant};
 
-let p_output_recovered = Participant::recover( & host_seckey, & recovery_data)?; // For participant
+let p_output_recovered = Participant::recover(&host_seckey, &recovery_data)?; // For participant
 
-let c_output_recovered = Coordinator::recover( & recovery_data)?; // For coordinator
+let c_output_recovered = Coordinator::recover(&recovery_data)?; // For coordinator
 ```
 
 ## Tests
