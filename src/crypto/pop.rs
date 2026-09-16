@@ -3,15 +3,14 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, X_ONLY_POINT_BYTES_SIZE,
-    compress_scalar_bip340, reduce_secret_scalar_from_bytes,
+    compress_scalar_bip340, reduce_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
+use k256::{ProjectivePoint, Scalar};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Generates Proof of Possession (a Schnorr signature):
@@ -144,10 +143,10 @@ fn get_pop_challenge(
     challenge_preimage.extend_from_slice(P);
     challenge_preimage.extend_from_slice(message);
 
-    Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+    Ok(reduce_scalar_from_bytes(&tagged_hash(
         TAG_POP_CHALLENGE,
         challenge_preimage,
-    ))))
+    )))
 }
 
 #[cfg(test)]

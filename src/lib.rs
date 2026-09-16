@@ -51,6 +51,8 @@ pub mod crypto;
 pub mod errors;
 pub mod msg;
 pub mod party;
+#[cfg(feature = "signing")]
+pub mod sign;
 
 /// Driver for a single participant across a full ChillDKG session.
 ///
@@ -481,13 +483,15 @@ mod tests {
     use crate::party::{
         ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
     };
+    #[cfg(feature = "signing")]
+    use crate::sign;
     use crate::{Coordinator, Participant};
     use k256::elliptic_curve::sec1::ToEncodedPoint;
     use k256::{ProjectivePoint, Scalar};
     use rand_core::OsRng;
 
     #[test]
-    fn success_generate_key_hl() {
+    fn success_generate_key_and_sign() {
         const T: usize = 3;
 
         let mut rng = OsRng;
@@ -549,6 +553,13 @@ mod tests {
         let res4 = p4.finalize(msg2_resp.clone()).unwrap();
         let res5 = p5.finalize(msg2_resp.clone()).unwrap();
 
+        #[cfg(feature = "signing")]
+        let signers = [
+            sign::Signer::from(&res1.0),
+            sign::Signer::from(&res2.0),
+            sign::Signer::from(&res3.0),
+        ];
+
         for (i, res) in [res1, res2, res3, res4, res5].iter().enumerate() {
             let (p_output, recovery_data) = res;
             assert_eq!(
@@ -577,6 +588,31 @@ mod tests {
                 p_output_recovered.secshare.to_bytes()
             );
             println!("\n");
+        }
+
+        // Create and verify a signature with 3 of 5.
+        #[cfg(feature = "signing")]
+        {
+            use sha2::{Digest, Sha256};
+
+            let msg: Vec<u8> = Sha256::digest(b"hello world").to_vec();
+            let [s1, s2, s3] = signers;
+
+            let (n1, sn1) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+            let (n2, sn2) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+            let (n3, sn3) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+
+            let pubnonces = vec![(0, n1.clone()), (1, n2.clone()), (2, n3.clone())];
+
+            let ps1 = s1.sign(&msg, &[], sn1, &pubnonces).unwrap();
+            let ps2 = s2.sign(&msg, &[], sn2, &pubnonces).unwrap();
+            let ps3 = s3.sign(&msg, &[], sn3, &pubnonces).unwrap();
+
+            let psigs = vec![(0, n1, ps1), (1, n2, ps2), (2, n3, ps3)];
+
+            let verifier = sign::Verifier::from(&output);
+            let sig = verifier.verify_and_aggregate(&psigs, &msg, &[]).unwrap();
+            verifier.verify(sig, &msg, &[]).unwrap();
         }
     }
 

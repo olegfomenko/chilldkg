@@ -23,6 +23,8 @@ building blocks used by the protocol.
 - [x] Tests with reference test vectors.
 - [x] Participant recovery using transcript and secret host key.
 - [x] Coordinator recovery using transcript.
+- [x] FROST signing ([BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing), behind the `signing` feature).
+- [ ] Deterministic FROST signing.
 - [ ] Malicious behavior investigation.
 - [ ] Messages serialization.
 - [ ] Implementation audit.
@@ -33,7 +35,9 @@ building blocks used by the protocol.
 - `src/coordinator`: coordinator state machine.
 - `src/msg.rs`: typed protocol messages and recovery data.
 - `src/errors.rs`: ChillDKG-style error names.
-- `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, and CertEq helpers.
+- `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, CertEq helpers, and
+  Lagrange interpolation.
+- `src/sign` (feature `signing`): FROST3 nonces, signer, verifier/aggregator, and key tweaking.
 - `tests`: unit tests and reference-vector integration tests.
 
 The API models the protocol as consuming state transitions. Each call to `next`
@@ -284,13 +288,128 @@ fn main() -> Result<()> {
 }
 ```
 
+## Signing
+
+FROST signing over a ChillDKG output is available behind the `signing` feature:
+
+```toml
+[dependencies]
+chilldkg-rs = { version = "0.3", features = ["signing"] }
+```
+
+It follows the [BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing) reference
+(FROST3): any `t` of the `n` participants produce a signature that verifies as a plain
+BIP340 signature under the threshold public key. Participant ids are the ChillDKG indices,
+and the subset that signs is simply the set of ids that contribute a nonce.
+
+You may need the following imports:
+
+```rust
+use chilldkg_rs::sign::{sample_nonce, PartialSignature, PubNonce, Signer, Tweak, Verifier};
+```
+
+The two roles hold only the long-lived DKG key material and are reused across signing sessions:
+
+- `Signer` — a participant's index, secret share and the threshold key (`From<&DKGOutput>`).
+- `Verifier` — threshold `t`, public shares and the threshold key (`From<&DKGOutput>` or
+  `From<&CoordinatorDKGOutput>`); used by the coordinator to check and combine partial
+  signatures, and by anyone to verify the final signature.
+
+Everything specific to one signing (message, tweaks, nonces) is passed per call.
+
+### Participant
+
+```rust
+fn main() -> Result<()> {
+    // ...
+
+    // Built once from the DKG output, reused for every signing.
+    let signer = Signer::from(&output);
+
+    // Round 1: generate a nonce pair for this session. All optional inputs are
+    // recommended: they bind the nonce to the share, key and message.
+    let (pubnonce, secnonce) = sample_nonce(
+        &mut rng,
+        Some(&output.secshare),
+        Some(&output.pubshares[output.idx]),
+        Some(&output.threshold_pubkey),
+        Some(msg),
+        None,
+    )?;
+    // TODO: make sure that you stored secnonce securely
+    
+    // TODO: send (output.idx, pubnonce) to the coordinator, keep secnonce
+
+    // TODO: receive the (id, pubnonce) list of all signers from the coordinator
+
+    // Round 2: produce the partial signature. `secnonce` is consumed here and
+    // cannot be used twice.
+    let psig = signer.sign(msg, &[], secnonce, &pubnonces)?;
+    // TODO: send (output.idx, psig) to the coordinator
+}
+```
+
+### Coordinator
+
+```rust
+fn main() -> Result<()> {
+    // ...
+
+    let verifier = Verifier::from(&coordinator_output);
+    
+    // TODO: select t of n signers, request nonce generation
+
+    // TODO: collect (id, pubnonce) from at least t participants, relay the
+    // list to them, then collect their partial signatures
+
+    // Checks every partial signature (a bad one is reported as
+    // FaultyParticipant { participant: id, .. }) and combines them into a
+    // 64-byte BIP340 signature.
+    let contributions: Vec<(usize, PubNonce, PartialSignature)> = /* (id, pubnonce, psig) */;
+    let sig = verifier.verify_and_aggregate(&contributions, msg, &[])?;
+
+    // Anyone can check the result under the threshold key.
+    verifier.verify(sig, msg, &[])?;
+}
+```
+
+`Verifier::partial_verify` checks a single partial signature, and `Verifier::aggregate`
+combines partial signatures given only the aggregate nonce `(R1, R2)` — the reference's
+`partial_sig_agg` — without verifying them.
+
+### Tweaks
+
+A session may sign under a tweaked key, e.g. a BIP32 child (plain tweak) or a BIP341
+Taproot output key (x-only tweak). Tweaks are applied in order and every party must pass
+the same list:
+
+```rust
+let tweaks = [
+    Tweak::plain(bip32_tweak),   // 32 bytes, applied as `Q' = Q + tweak * G`
+    Tweak::xonly(taproot_tweak), // 32 bytes, applied to the even-y form of `Q`
+];
+
+let psig = signer.sign(msg, &tweaks, secnonce, &pubnonces)?;
+let sig = verifier.verify_and_aggregate(&contributions, msg, &tweaks)?;
+
+// The key the signature verifies under, for external BIP340 verifiers.
+let tweaked_pubkey = verifier.signing_pubkey(&tweaks)?;
+verifier.verify(sig, msg, &tweaks)?;
+```
+
+Note that a ChillDKG threshold key already commits to an unspendable Taproot script path
+(`TapTweak` with no script), as BIP445 requires of key generation, so no extra tweak is
+needed to spend it as a key-path-only Taproot output.
+
 ## Tests
 
 Run all tests:
 
 ```bash
-cargo test
+cargo test --all-features
 ```
+
+`cargo test` alone runs the DKG tests only; the `sign_*` targets require the `signing` feature.
 
 Current vector coverage:
 
@@ -300,6 +419,9 @@ Current vector coverage:
 - `coordinator_step1_vectors`: reference cases `1, 2, 4, 5`.
 - `coordinator_finalize_vectors`: reference cases `1, 2, 3`.
 - `recover_vectors`: reference cases `1, 2, 3, 4, 5, 6, 7, 8, 9, 11`.
+- `sign_nonce_vectors`, `sign_vectors`, `sign_agg_vectors`: BIP-FROST-signing `nonce_gen`,
+  `nonce_agg`, `tweak`, `sign_verify` and `sig_agg` vectors (encoding-only error cases omitted).
+- `sign_e2e`: full ChillDKG → FROST → BIP340 round trip.
 
 ## Differences From The Reference Implementation
 
