@@ -17,3 +17,12 @@ pub const TAG_BIP340_NONCE: &str = "BIP0340/nonce";
 pub const TAG_BIP340_CHALLENGE: &str = "BIP0340/challenge";
 
 pub const TAG_TAP_TWEAK: &str = "TapTweak";
+
+#[cfg(feature = "signing")]
+pub const TAG_FROST_AUX: &str = "BIP0445/aux";
+#[cfg(feature = "signing")]
+pub const TAG_FROST_NONCE: &str = "BIP0445/nonce";
+#[cfg(feature = "signing")]
+pub const TAG_FROST_NONCECOEF: &str = "BIP0445/noncecoef";
+#[cfg(feature = "signing")]
+pub const TAG_FROST_DETERMINISTIC_NONCE: &str = "BIP0445/deterministic/nonce";

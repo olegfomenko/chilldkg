@@ -1,0 +1,111 @@
+#![allow(non_snake_case)] // Uppercase identifiers denote curve points.
+
+use crate::common::{
+    parse_aggnonce_hex, parse_hex_array, parse_point_hex, parse_scalar_hex, verify_bip340,
+};
+use chilldkg_rs::sign::{Tweak, Verifier};
+
+pub mod common;
+
+#[test]
+fn test_aggregate_passes() {
+    let verifier = Verifier {
+        t: 2,
+        thresh_pk: parse_point_hex(
+            "03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237",
+        )
+        .unwrap(),
+        pubshares: vec![
+            parse_point_hex("022B02109FBCFB4DA3F53C7393B22E72A2A51C4AFBF0C01AAF44F73843CFB4B74B")
+                .unwrap(),
+            parse_point_hex("02EC6444271D791A1DA95300329DB2268611B9C60E193DABFDEE0AA816AE512583")
+                .unwrap(),
+            parse_point_hex("03113F810F612567D9552F46AF9BDA21A67D52060F95BD4A723F4B60B1820D3676")
+                .unwrap(),
+        ],
+    };
+    let msg =
+        hex::decode("599C67EA410D005B9DA90817CF03ED3B1C868E4DA4EDF00A5880B0082C237869").unwrap();
+
+    for (ids, aggnonce, tweaks, psigs, expected) in [
+        // Minimum threshold subset of signers (t=2 of n=3), no tweaks
+        (
+            vec![0, 1],
+            "02ABA4374155062E973007AC12D2CB1BCB70A76ACF3CFCE6F9E2160CF5D7DD4CCB03EB324CCEF66810F01197F28E63B97B50D7F6503940709E8DDD0313144D039568",
+            vec![],
+            vec![
+                "911E1C3821D5C4314C32BF7B312C39B7D9A2C54FB3EF1E3349395299A781ED93",
+                "6F6E24B9ADD50F74B329F27A6EC30250A89938AD8C9CBE0235BD8EB8EAEA9EE2",
+            ],
+            "5527965735029EAD5BBF977E71E06B601589E22E241F11DD68F420E75FE4AC63008C40F1CFAAD3A5FF5CB1F59FEF3C09C78D211691433BF9BF2482C5C2364B34",
+        ),
+        // Signer order does not affect the aggregate signature: partial signatures are summed, so this matches the first valid case
+        (
+            vec![1, 0],
+            "02ABA4374155062E973007AC12D2CB1BCB70A76ACF3CFCE6F9E2160CF5D7DD4CCB03EB324CCEF66810F01197F28E63B97B50D7F6503940709E8DDD0313144D039568",
+            vec![],
+            vec![
+                "6F6E24B9ADD50F74B329F27A6EC30250A89938AD8C9CBE0235BD8EB8EAEA9EE2",
+                "911E1C3821D5C4314C32BF7B312C39B7D9A2C54FB3EF1E3349395299A781ED93",
+            ],
+            "5527965735029EAD5BBF977E71E06B601589E22E241F11DD68F420E75FE4AC63008C40F1CFAAD3A5FF5CB1F59FEF3C09C78D211691433BF9BF2482C5C2364B34",
+        ),
+        // Aggregation with three tweaks applied (one x-only, two plain)
+        (
+            vec![0, 1],
+            "02ABA4374155062E973007AC12D2CB1BCB70A76ACF3CFCE6F9E2160CF5D7DD4CCB03EB324CCEF66810F01197F28E63B97B50D7F6503940709E8DDD0313144D039568",
+            vec![
+                (
+                    "B511DA492182A91B0FFB9A98020D55F260AE86D7ECBD0399C7383D59A5F2AF7C",
+                    true,
+                ),
+                (
+                    "A815FE049EE3C5AAB66310477FBC8BCCCAC2F3395F59F921C364ACD78A2F48DC",
+                    false,
+                ),
+                (
+                    "75448A87274B056468B977BE06EB1E9F657577B7320B0A3376EA51FD420D18A8",
+                    false,
+                ),
+            ],
+            vec![
+                "BFFDAC5F3CB017F2DEF06D1D7703A50875CF18D4F9CFCFE1FD0261D1250655A8",
+                "1792D36FD56EBA5A303C7F7E367B3EB48D6F631258FF396C36F4AA7D268039FA",
+            ],
+            "6D5558EB783A023F2A09BDE65D3E9DB79928702D4143BCFD69C2074C9A143F5108D818ADC9BD3AA2B9DC669B66AD9EF420FDBF97558DB65D9528C27FBEB3308E",
+        ),
+        // All n=3 signers participate, no tweaks
+        (
+            vec![0, 1, 2],
+            "021F4A843C6740C0F36AF26DF2D3DBBD5DF5A79037579F4C979B2FE0B047FE2A88035DE91B1E9BFC222DCF83A8D2C7C468EB3B2F104661F6358257E7A90EA9BA7B92",
+            vec![],
+            vec![
+                "96CCC80C315D5F61DA34B6FF7FB86CFB642FD1410089B7B6CE205C50C22891CF",
+                "33E5776846D493D422F995B676A73ACE7897345081DC569B2FE3BC0940F72DD6",
+                "B907873BD954272E5B3E97DAC1CC93D6DF1BF8161A69D2C548B3C1D405CF1C2C",
+            ],
+            "12FADDB3E8C8A8B95E6C36E5B33CB657A840A2EC1DDABCC19D05E99FD71F637583B9C6B051861A64586CE490B82C3BA2013420C0ED8740DB86E57BA138B89A90",
+        ),
+    ] {
+        let tweaks: Vec<Tweak> = tweaks
+            .iter()
+            .map(|(hex, is_xonly)| Tweak {
+                value: parse_hex_array(hex).unwrap(),
+                is_xonly: *is_xonly,
+            })
+            .collect();
+        let psigs: Vec<_> = psigs.iter().map(|h| parse_scalar_hex(h).unwrap()).collect();
+
+        let sig = verifier
+            .aggregate(
+                &ids,
+                &psigs,
+                parse_aggnonce_hex(aggnonce).unwrap(),
+                &msg,
+                &tweaks,
+            )
+            .unwrap();
+        assert_eq!(hex::encode_upper(sig), expected);
+        verify_bip340(sig, &verifier.signing_pubkey(&tweaks).unwrap(), &msg).unwrap();
+    }
+}

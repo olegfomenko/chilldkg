@@ -1,6 +1,8 @@
 pub mod certeq;
 pub mod ec;
 pub mod enc;
+#[cfg(feature = "signing")]
+pub mod lagrange;
 pub mod poly;
 pub mod pop;
 pub mod schnorr;

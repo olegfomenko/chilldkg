@@ -8,13 +8,10 @@ use crate::crypto::ec::{
 };
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
-use crate::crypto::tags::{
-    TAG_BIP340_AUX, TAG_BIP340_CHALLENGE, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE,
-};
+use crate::crypto::tags::{TAG_BIP340_AUX, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE};
 use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
+use k256::{ProjectivePoint, Scalar};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Certificate-of-equality transcript.
@@ -263,10 +260,6 @@ impl SchnorrSigner for CertEQSigner {
 
         Ok(compress_scalar_bip340(&k0))
     }
-
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        get_certeq_challenge(R, P, self.message())
-    }
 }
 
 pub struct CertEQVerifier {
@@ -292,26 +285,6 @@ impl SchnorrVerifier for CertEQVerifier {
     fn pub_key(&self) -> ProjectivePoint {
         self.host_pubkey
     }
-
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-        get_certeq_challenge(R, P, self.message())
-    }
-}
-
-fn get_certeq_challenge(
-    R: &BIP340XOnlyPubKey,
-    P: &BIP340XOnlyPubKey,
-    message: &[u8],
-) -> Result<Scalar> {
-    let mut challenge_preimage = Vec::with_capacity(EC_SCALAR_BYTES_SIZE * 2 + message.len());
-    challenge_preimage.extend_from_slice(R);
-    challenge_preimage.extend_from_slice(P);
-    challenge_preimage.extend_from_slice(message);
-
-    Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
-        TAG_BIP340_CHALLENGE,
-        challenge_preimage,
-    ))))
 }
 
 fn get_certeq_message(transcript: &CertEQTranscript, idx: usize) -> Vec<u8> {
