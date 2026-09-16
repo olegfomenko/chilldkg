@@ -96,9 +96,9 @@ fn test_dkg_then_sign_passes() {
         }
     );
     assert!(
-        !verifier
+        verifier
             .partial_verify(&tampered[1].2, signer_ids[1], &pubnonces, msg, &tweaks)
-            .unwrap()
+            .is_err()
     );
 
     // Fewer than t signers are rejected.

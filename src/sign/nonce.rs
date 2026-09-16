@@ -10,6 +10,7 @@ use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use rand_core::CryptoRngCore;
+use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// A signer's secret nonce pair.
@@ -159,35 +160,36 @@ fn nonce_hash(
     extra_in: Option<&[u8]>,
     i: u8,
 ) -> Result<SecretScalar> {
-    let mut buf = Zeroizing::new(Vec::with_capacity(
-        rand.len() + COMPRESSED_POINT_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 8,
-    ));
+    let tag_hash = Sha256::digest(TAG_FROST_NONCE);
+    let mut hash = Sha256::new();
+    hash.update(tag_hash);
+    hash.update(tag_hash);
 
-    buf.extend_from_slice(rand);
+    hash.update(rand);
 
     match pubshare {
         Some(p) => {
-            buf.push(COMPRESSED_POINT_BYTES_SIZE as u8);
-            buf.extend_from_slice(&compress_default(p));
+            hash.update([COMPRESSED_POINT_BYTES_SIZE as u8]);
+            hash.update(compress_default(p));
         }
-        None => buf.push(0u8),
+        None => hash.update([0u8]),
     }
 
     match thresh_pk {
         Some(p) => {
-            buf.push(X_ONLY_POINT_BYTES_SIZE as u8);
-            buf.extend_from_slice(&compress_point_bip340(p));
+            hash.update([X_ONLY_POINT_BYTES_SIZE as u8]);
+            hash.update(compress_point_bip340(p));
         }
-        None => buf.push(0u8),
+        None => hash.update([0u8]),
     }
 
     match msg {
         Some(msg) => {
-            buf.push(1u8);
-            buf.extend_from_slice(&(msg.len() as u64).to_be_bytes());
-            buf.extend_from_slice(msg);
+            hash.update([1u8]);
+            hash.update((msg.len() as u64).to_be_bytes());
+            hash.update(msg);
         }
-        None => buf.push(0u8),
+        None => hash.update([0u8]),
     }
 
     match extra_in {
@@ -196,16 +198,16 @@ fn nonce_hash(
                 u32::try_from(extra_in.len()).is_ok(),
                 ChillDkgError::Value("The extra input must be shorter than 2^32 bytes.".into()),
             );
-            buf.extend_from_slice(&(extra_in.len() as u32).to_be_bytes());
-            buf.extend_from_slice(extra_in);
+            hash.update((extra_in.len() as u32).to_be_bytes());
+            hash.update(extra_in);
         }
         // Absent extra input is the empty string, whose 4-byte length is still hashed.
-        None => buf.extend_from_slice(&0u32.to_be_bytes()),
+        None => hash.update(0u32.to_be_bytes()),
     }
 
-    buf.push(i);
+    hash.update([i]);
 
     Ok(reduce_secret_scalar_from_bytes(Zeroizing::new(
-        tagged_hash(TAG_FROST_NONCE, &buf),
+        hash.finalize().into(),
     )))
 }

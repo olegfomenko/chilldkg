@@ -483,11 +483,12 @@ mod tests {
     use crate::party::{
         ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
     };
-    use crate::{Coordinator, Participant, sign};
+    #[cfg(feature = "signing")]
+    use crate::sign;
+    use crate::{Coordinator, Participant};
     use k256::elliptic_curve::sec1::ToEncodedPoint;
     use k256::{ProjectivePoint, Scalar};
     use rand_core::OsRng;
-    use sha2::{Digest, Sha256};
 
     #[test]
     fn success_generate_key_and_sign() {
@@ -552,9 +553,12 @@ mod tests {
         let res4 = p4.finalize(msg2_resp.clone()).unwrap();
         let res5 = p5.finalize(msg2_resp.clone()).unwrap();
 
-        let s1 = sign::Signer::from(&res1.0);
-        let s2 = sign::Signer::from(&res2.0);
-        let s3 = sign::Signer::from(&res3.0);
+        #[cfg(feature = "signing")]
+        let signers = [
+            sign::Signer::from(&res1.0),
+            sign::Signer::from(&res2.0),
+            sign::Signer::from(&res3.0),
+        ];
 
         for (i, res) in [res1, res2, res3, res4, res5].iter().enumerate() {
             let (p_output, recovery_data) = res;
@@ -586,29 +590,30 @@ mod tests {
             println!("\n");
         }
 
-        // Create and verify signature
+        // Create and verify a signature with 3 of 5.
+        #[cfg(feature = "signing")]
+        {
+            use sha2::{Digest, Sha256};
 
-        let msg: Vec<u8> = Sha256::digest(b"hello world").to_vec();
+            let msg: Vec<u8> = Sha256::digest(b"hello world").to_vec();
+            let [s1, s2, s3] = signers;
 
-        // 3 of 5 to sign
-        let (n1, sn1) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
-        let (n2, sn2) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
-        let (n3, sn3) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+            let (n1, sn1) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+            let (n2, sn2) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
+            let (n3, sn3) = sign::sample_nonce(&mut rng, None, None, None, None, None).unwrap();
 
-        let pubnonces = vec![(0, n1.clone()), (1, n2.clone()), (2, n3.clone())];
+            let pubnonces = vec![(0, n1.clone()), (1, n2.clone()), (2, n3.clone())];
 
-        let ps1 = s1.sign(&msg, &[], sn1, &pubnonces).unwrap();
-        let ps2 = s2.sign(&msg, &[], sn2, &pubnonces).unwrap();
-        let ps3 = s3.sign(&msg, &[], sn3, &pubnonces).unwrap();
+            let ps1 = s1.sign(&msg, &[], sn1, &pubnonces).unwrap();
+            let ps2 = s2.sign(&msg, &[], sn2, &pubnonces).unwrap();
+            let ps3 = s3.sign(&msg, &[], sn3, &pubnonces).unwrap();
 
-        let psigs = vec![(0, n1, ps1), (1, n2, ps2), (2, n3, ps3)];
+            let psigs = vec![(0, n1, ps1), (1, n2, ps2), (2, n3, ps3)];
 
-        let verifier = sign::Verifier::from(&output);
-
-        // Creates an aggregates
-        let sig = verifier.verify_and_aggregate(&psigs, &msg, &[]).unwrap();
-
-        verifier.verify(sig, &msg, &[]).unwrap();
+            let verifier = sign::Verifier::from(&output);
+            let sig = verifier.verify_and_aggregate(&psigs, &msg, &[]).unwrap();
+            verifier.verify(sig, &msg, &[]).unwrap();
+        }
     }
 
     #[test]

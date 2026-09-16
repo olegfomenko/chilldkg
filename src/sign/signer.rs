@@ -92,10 +92,9 @@ impl Signer {
     /// public nonces of every signer (this one included). Consumes the secret
     /// nonce, so it cannot be reused.
     ///
-    /// The caller is responsible for the session-level checks the reference
-    /// makes in `validate_signers_ctx`: that at least `t` and at most `n`
-    /// distinct, in-range participants sign and that their public shares
-    /// interpolate to `threshold_pubkey`.
+    /// Runs the session-level checks of the reference's `validate_signers_ctx`
+    /// first: at least `t` and at most `n` distinct, in-range participants
+    /// sign and their public shares interpolate to `threshold_pubkey`.
     ///
     /// Math: `k_j = -k_j` if `R` has an odd `y`; `d = g * gacc * u_i`;
     /// `s_i = k_1 + b * k_2 + e * a_i * d`.
@@ -132,8 +131,17 @@ impl Signer {
 
         let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg)?;
 
-        // Fails if my_id is not among the signers.
+        // Fails if my_id is not among the signers (so my_id < n from here on).
         let a = lagrange(&ids, self.my_id)?;
+
+        // The share we hold must be the one the group knows us by.
+        let pubshare = self.pubshare();
+        chill_dkg_ensure!(
+            pubshare == self.pubshares[self.my_id],
+            ChillDkgError::Value(
+                "The signer's pubshare must be included in the list of pubshares.".into()
+            ),
+        );
 
         // Public nonce of the un-negated secret nonce, used for the self-check below.
         let pubnonce = secnonce.pubnonce();
@@ -147,20 +155,9 @@ impl Signer {
         let s = k.k1 + b_k2.as_ref() + e_a_d.as_ref();
 
         // The result of signing must pass partial signature verification.
-        chill_dkg_ensure!(
-            Verifier::partial_sig_verify_internal(
-                &s,
-                self.my_id,
-                &pubnonce,
-                &self.pubshare(),
-                &ids,
-                &tweak_ctx,
-                b,
-                &R,
-                e,
-            ),
-            ChillDkgError::Runtime("produced partial signature does not verify".into()),
-        );
+        Verifier::partial_sig_verify_internal(
+            &s, self.my_id, &pubnonce, &pubshare, &ids, &tweak_ctx, b, &R, e,
+        )?;
 
         Ok(s)
     }

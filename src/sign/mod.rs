@@ -20,9 +20,9 @@
 //!
 //! [`Signer`] and [`Verifier`] hold only the long-lived DKG key material
 //! (both are `From` a DKG output) and are reused across signing sessions.
-//! The session-level checks of the reference's `validate_signers_ctx` (the
-//! signing subset has between `t` and `n` distinct, in-range members whose
-//! shares interpolate to the threshold key) are left to the caller.
+//! Both run the session-level checks of the reference's `validate_signers_ctx`
+//! on every call: the signing subset has between `t` and `n` distinct,
+//! in-range members whose shares interpolate to the threshold key.
 //!
 //! ## Nonce reuse
 //!

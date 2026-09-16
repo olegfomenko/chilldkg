@@ -112,23 +112,17 @@ impl Verifier {
         let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg)?;
 
         for (id, pubnonce, psig) in psigs {
-            chill_dkg_ensure!(
-                Self::partial_sig_verify_internal(
-                    psig,
-                    *id,
-                    pubnonce,
-                    &self.pubshares[*id],
-                    &ids,
-                    &tweak_ctx,
-                    b,
-                    &R,
-                    e,
-                ),
-                ChillDkgError::FaultyParticipant {
-                    participant: *id,
-                    message: "invalid partial signature".into(),
-                },
-            );
+            Self::partial_sig_verify_internal(
+                psig,
+                *id,
+                pubnonce,
+                &self.pubshares[*id],
+                &ids,
+                &tweak_ctx,
+                b,
+                &R,
+                e,
+            )?;
         }
 
         Ok(Self::combine(
@@ -140,8 +134,9 @@ impl Verifier {
     }
 
     /// Verifies one signer's partial signature against the public nonces of
-    /// the whole session. Returns `Ok(false)` if the signature is invalid and
-    /// an error if the inputs are malformed.
+    /// the whole session. An invalid signature or an identity nonce is
+    /// reported as [`ChillDkgError::FaultyParticipant`]; malformed session
+    /// inputs as [`ChillDkgError::Value`].
     ///
     /// Mirrors the reference `partial_sig_verify`.
     pub fn partial_verify(
@@ -151,7 +146,7 @@ impl Verifier {
         pubnonces: &[(usize, PubNonce)],
         msg: &[u8],
         tweaks: &[Tweak],
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let ids: Vec<usize> = pubnonces.iter().map(|(id, _)| *id).collect();
         validate_signers(self.t, &self.pubshares, &self.thresh_pk, &ids)?;
 
@@ -172,7 +167,7 @@ impl Verifier {
 
         let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg)?;
 
-        Ok(Self::partial_sig_verify_internal(
+        Self::partial_sig_verify_internal(
             psig,
             id,
             pubnonce,
@@ -182,7 +177,7 @@ impl Verifier {
             b,
             &R,
             e,
-        ))
+        )
     }
 
     /// Combines partial signatures into a BIP340 signature under the tweaked
@@ -229,17 +224,43 @@ impl Verifier {
         b: Scalar,
         R: &ProjectivePoint,
         e: Scalar,
-    ) -> bool {
+    ) -> Result<()> {
+        chill_dkg_ensure!(
+            !bool::from(pubnonce.R1.is_identity()),
+            ChillDkgError::FaultyParticipant {
+                participant: my_id,
+                message: "Participant provided identity R1 nonce".into()
+            },
+        );
+
+        chill_dkg_ensure!(
+            !bool::from(pubnonce.R2.is_identity()),
+            ChillDkgError::FaultyParticipant {
+                participant: my_id,
+                message: "Participant provided identity R2 nonce".into()
+            },
+        );
+
         let Re_s_ = pubnonce.R1 + pubnonce.R2 * b;
         let Re_s = if has_even_y(R) { Re_s_ } else { -Re_s_ };
 
         // Fails if my_id is not among the signers.
         let Ok(a) = lagrange(ids, my_id) else {
-            return false;
+            return Err(ChillDkgError::Value(
+                "Participants is not among the signers.".into(),
+            ));
         };
         let g_ = tweak_ctx.g() * tweak_ctx.gacc;
 
-        ProjectivePoint::GENERATOR * psig == Re_s + pubshare * &(e * a * g_)
+        chill_dkg_ensure!(
+            ProjectivePoint::GENERATOR * psig == Re_s + pubshare * &(e * a * g_),
+            ChillDkgError::FaultyParticipant {
+                participant: my_id,
+                message: "invalid partial signature".into(),
+            },
+        );
+
+        Ok(())
     }
 
     /// Math: `s = sum_i s_i + e * g * tacc`; signature is `R_x || s`.

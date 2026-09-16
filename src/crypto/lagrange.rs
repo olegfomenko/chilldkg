@@ -67,7 +67,7 @@ pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Resul
     let Q = pubshares
         .iter()
         .zip(ids.iter())
-        .map(|(X_i, i)| return Ok(X_i * &lagrange(ids, *i)?))
+        .map(|(X_i, i)| Ok(X_i * &lagrange(ids, *i)?))
         .sum::<Result<ProjectivePoint>>()?;
 
     // Q is not the point at infinity except with negligible probability.

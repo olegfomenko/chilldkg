@@ -262,7 +262,7 @@ fn test_sign_passes() {
         assert!(
             verifier
                 .partial_verify(&psig, my_id, &pubnonces, msg, &tweaks)
-                .unwrap()
+                .is_ok()
         );
     }
 }
@@ -337,6 +337,16 @@ fn test_sign_rejects_invalid_inputs() {
             0,
             0,
             Value("The participant identifier list contains duplicate elements.".into()),
+        ),
+        // Signer's own public share is not in the public share list
+        (
+            vec![1, 2],
+            [0, 1, 2],
+            vec![],
+            1,
+            0,
+            0,
+            Value("The signer's pubshare must be included in the list of pubshares.".into()),
         ),
         // A signer id is outside the valid range [0, n-1]
         (
@@ -460,9 +470,9 @@ fn test_verify_rejects_invalid_partial_signature() {
             .collect();
         let psig = parse_scalar_hex(psig).unwrap();
         assert!(
-            !verifier
+            verifier
                 .partial_verify(&psig, my_id, &pubnonces, &msg, &[])
-                .unwrap()
+                .is_err()
         );
     }
 }
