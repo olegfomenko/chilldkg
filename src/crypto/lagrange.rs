@@ -32,6 +32,10 @@ pub fn lagrange(ids: &[usize], my_id: usize) -> Result<Scalar> {
         ChillDkgError::Value("The participant identifier list contains duplicate elements.".into()),
     );
 
+    lagrange_internal(ids, my_id)
+}
+
+fn lagrange_internal(ids: &[usize], my_id: usize) -> Result<Scalar> {
     let my = Scalar::from(my_id as u64);
     let mut num = Scalar::ONE;
     let mut deno = Scalar::ONE;
@@ -64,10 +68,15 @@ pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Resul
         ChillDkgError::Value("The pubshares and ids arrays must have the same length.".into()),
     );
 
+    chill_dkg_ensure!(
+        ids.iter().all_unique(),
+        ChillDkgError::Value("The participant identifier list contains duplicate elements.".into()),
+    );
+
     let Q = pubshares
         .iter()
         .zip(ids.iter())
-        .map(|(X_i, i)| Ok(X_i * &lagrange(ids, *i)?))
+        .map(|(X_i, i)| Ok(X_i * &lagrange_internal(ids, *i)?))
         .sum::<Result<ProjectivePoint>>()?;
 
     // Q is not the point at infinity except with negligible probability.
