@@ -2,12 +2,12 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{compress_default, compress_point_bip340, reduce_scalar_from_bytes};
-use crate::crypto::lagrange::lagrange;
 use crate::crypto::schnorr::bip340_challenge;
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::TAG_FROST_NONCECOEF;
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::DKGOutput;
+use crate::sign::lagrange::lagrange;
 use crate::sign::nonce::{SecNonce, aggr_pubnonces};
 use crate::sign::tweak::{Tweak, TweakContext};
 use crate::sign::verifier::validate_signers;

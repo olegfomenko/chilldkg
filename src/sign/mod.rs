@@ -34,6 +34,7 @@
 //! Note that a ChillDKG threshold key already commits to an unspendable
 //! Taproot script path, as BIP445 requires of key generation.
 
+pub mod lagrange;
 mod nonce;
 mod signer;
 mod tweak;

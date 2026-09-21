@@ -2,12 +2,12 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{X_ONLY_POINT_BYTES_SIZE, compress_point_bip340, has_even_y};
-use crate::crypto::lagrange::{interpolate_pubkey, lagrange};
 use crate::crypto::schnorr::{
     SCHNORR_SIG_BYTES_SIZE, SchnorrSignature, SchnorrVerifier, bip340_challenge,
 };
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorDKGOutput, DKGOutput};
+use crate::sign::lagrange::{interpolate_pubkey, lagrange};
 use crate::sign::nonce::{PubNonce, aggr_pubnonces, get_pub_nonce};
 use crate::sign::signer::{PartialSignature, signing_nonce};
 use crate::sign::tweak::{Tweak, TweakContext};
