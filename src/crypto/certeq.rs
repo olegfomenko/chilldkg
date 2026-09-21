@@ -9,9 +9,10 @@ use crate::crypto::ec::{
 use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_BIP340_AUX, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE};
-use crate::crypto::{SecretScalar, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
 use crate::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
+use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Certificate-of-equality transcript.
@@ -243,14 +244,12 @@ impl SchnorrSigner for CertEQSigner {
             t[i] ^= aux_hash[i];
         }
 
-        let mut nonce_preimage = Zeroizing::new(Vec::with_capacity(
-            EC_SCALAR_BYTES_SIZE * 2 + self.message().len(),
-        ));
-        nonce_preimage.extend_from_slice(t.as_slice());
-        nonce_preimage.extend_from_slice(P_x);
-        nonce_preimage.extend_from_slice(self.message());
+        let mut hash = tagged_hasher(TAG_BIP340_NONCE);
+        hash.update(t.as_slice());
+        hash.update(P_x);
+        hash.update(self.message());
 
-        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_BIP340_NONCE, &nonce_preimage));
+        let preimage_bytes = Zeroizing::new(hash.finalize().into());
         let k0 = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(

@@ -6,11 +6,11 @@ use crate::crypto::ec::{
     has_even_y, reduce_secret_scalar_from_bytes,
 };
 use crate::crypto::tags::{TAG_FROST_AUX, TAG_FROST_NONCE};
-use crate::crypto::{SecretScalar, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
 use crate::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use rand_core::CryptoRngCore;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// A signer's secret nonce pair.
@@ -160,11 +160,7 @@ fn nonce_hash(
     extra_in: Option<&[u8]>,
     i: u8,
 ) -> Result<SecretScalar> {
-    let tag_hash = Sha256::digest(TAG_FROST_NONCE);
-    let mut hash = Sha256::new();
-    hash.update(tag_hash);
-    hash.update(tag_hash);
-
+    let mut hash = tagged_hasher(TAG_FROST_NONCE);
     hash.update(rand);
 
     match pubshare {

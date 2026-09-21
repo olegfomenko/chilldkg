@@ -184,7 +184,7 @@ pub fn signing_nonce(
         .collect();
     let (R1, R2) = aggnonce;
 
-    let b = reduce_scalar_from_bytes(&tagged_hash(
+    let b = reduce_scalar_from_bytes(tagged_hash(
         TAG_FROST_NONCECOEF,
         [
             ser_ids.as_slice(),

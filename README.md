@@ -294,7 +294,7 @@ FROST signing over a ChillDKG output is available behind the `signing` feature:
 
 ```toml
 [dependencies]
-chilldkg-rs = { version = "0.3", features = ["signing"] }
+chilldkg-rs = { version = "0.4", features = ["signing"] }
 ```
 
 It follows the [BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing) reference

@@ -90,7 +90,7 @@ impl Verifier {
     /// BIP340 signature under the tweaked threshold key.
     ///
     /// `psigs` pairs each signer's participant id with its partial signature
-    /// and must cover exactly the signers of `pubnonces`. An invalid partial
+    /// and its public nonce. An invalid partial
     /// signature is reported as [`ChillDkgError::FaultyParticipant`] naming
     /// that signer's participant id.
     pub fn verify_and_aggregate(

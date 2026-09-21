@@ -17,13 +17,18 @@ pub type SecretScalar = Zeroizing<Scalar>;
 pub type TaggedHash = [u8; 32];
 
 pub fn tagged_hash(tag: impl AsRef<[u8]>, x: impl AsRef<[u8]>) -> TaggedHash {
+    let mut hash = tagged_hasher(tag);
+    hash.update(x.as_ref());
+    hash.finalize().into()
+}
+
+pub fn tagged_hasher(tag: impl AsRef<[u8]>) -> Sha256 {
     let tag_hash = Sha256::digest(tag.as_ref());
 
     let mut hash = Sha256::new();
     hash.update(tag_hash);
     hash.update(tag_hash);
-    hash.update(x.as_ref());
-    hash.finalize().into()
+    hash
 }
 
 #[cfg(test)]

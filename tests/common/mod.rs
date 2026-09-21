@@ -188,7 +188,7 @@ pub fn verify_bip340(
             self.1
         }
         fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
-            Ok(reduce_scalar_from_bytes(&tagged_hash(
+            Ok(reduce_scalar_from_bytes(tagged_hash(
                 TAG_BIP340_CHALLENGE,
                 [R.as_slice(), P, self.0].concat(),
             )))

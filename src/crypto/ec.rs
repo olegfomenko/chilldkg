@@ -33,8 +33,8 @@ pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> 
 
 /// reduce_scalar_from_bytes parses 32-byte array into Scalar, applying mod n operation,
 /// where n is the field order.
-pub fn reduce_scalar_from_bytes(x: &[u8]) -> Scalar {
-    <Scalar as Reduce<U256>>::reduce_bytes(x.into())
+pub fn reduce_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Scalar {
+    <Scalar as Reduce<U256>>::reduce_bytes(&x.into())
 }
 
 /// parse_secret_scalar_from_bytes parses 32-byte array into Scalar.

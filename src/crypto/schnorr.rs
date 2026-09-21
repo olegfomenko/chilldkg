@@ -114,13 +114,8 @@ pub fn bip340_challenge(
     P: &BIP340XOnlyPubKey,
     message: &[u8],
 ) -> Result<Scalar> {
-    let mut challenge_preimage = Vec::with_capacity(EC_SCALAR_BYTES_SIZE * 2 + message.len());
-    challenge_preimage.extend_from_slice(R);
-    challenge_preimage.extend_from_slice(P);
-    challenge_preimage.extend_from_slice(message);
-
-    Ok(reduce_scalar_from_bytes(&tagged_hash(
+    Ok(reduce_scalar_from_bytes(tagged_hash(
         TAG_BIP340_CHALLENGE,
-        challenge_preimage,
+        [R, P, message].concat(),
     )))
 }
