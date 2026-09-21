@@ -314,7 +314,7 @@ pub struct Coordinator {
     state: CoordinatorStateValue,
 }
 
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq)]
 enum CoordinatorStateValue {
     Initial(CoordinatorInitialState),

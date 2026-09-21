@@ -213,7 +213,7 @@ impl Verifier {
 
     /// Math: `s_i * G == R_i' + (e * a_i * g * gacc) * Y_i`, where
     /// `R_i' = R_{i,1} + b * R_{i,2}`, negated if `R` has an odd `y`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub(crate) fn partial_sig_verify_internal(
         psig: &PartialSignature,
         my_id: usize,
