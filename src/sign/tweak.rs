@@ -114,7 +114,7 @@ impl TweakContext {
     }
 
     /// The tweaked key in 33-byte compressed encoding.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn compressed_pubkey(&self) -> CompressedPubKey {
         compress_default(&self.q)
     }
