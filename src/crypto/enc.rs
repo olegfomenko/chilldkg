@@ -2,13 +2,13 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
-    COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default, ecdh,
-    reduce_secret_scalar_from_bytes,
+    EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default, ecdh, reduce_secret_scalar_from_bytes,
 };
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
-use crate::crypto::{SecretScalar, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hasher};
 use crate::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
+use sha2::Digest;
 use zeroize::Zeroizing;
 
 /// ChillDKG ECDH sending pad.
@@ -23,16 +23,15 @@ use zeroize::Zeroizing;
 /// ```
 pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
     let ecdh_bytes = ecdh(P_j, r_i);
-    let mut data = Zeroizing::new(Vec::with_capacity(
-        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
-    ));
-    data.extend_from_slice(ecdh_bytes.as_slice());
-    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * r_i)));
-    data.extend_from_slice(&compress_default(P_j));
-    data.extend_from_slice(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let mut hash = tagged_hasher(TAG_ENCPEDPOP_ECDH);
+    hash.update(ecdh_bytes.as_slice());
+    hash.update(compress_default(&(ProjectivePoint::GENERATOR * r_i)));
+    hash.update(compress_default(P_j));
+    hash.update(context);
+
+    let pad = Zeroizing::new(hash.finalize().into());
+    reduce_secret_scalar_from_bytes(pad)
 }
 
 /// ChillDKG ECDH receiving pad.
@@ -47,16 +46,15 @@ pub fn ecdh_send_pad(r_i: &Scalar, P_j: &ProjectivePoint, context: &[u8]) -> Sec
 /// ```
 pub fn ecdh_receive_pad(s_i: &Scalar, R_j: &ProjectivePoint, context: &[u8]) -> SecretScalar {
     let ecdh_bytes = ecdh(R_j, s_i);
-    let mut data = Zeroizing::new(Vec::with_capacity(
-        ecdh_bytes.len() + COMPRESSED_POINT_BYTES_SIZE * 2 + context.len(),
-    ));
-    data.extend_from_slice(ecdh_bytes.as_slice());
-    data.extend_from_slice(&compress_default(R_j));
-    data.extend_from_slice(&compress_default(&(ProjectivePoint::GENERATOR * s_i)));
-    data.extend_from_slice(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCPEDPOP_ECDH, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let mut hash = tagged_hasher(TAG_ENCPEDPOP_ECDH);
+    hash.update(ecdh_bytes.as_slice());
+    hash.update(compress_default(R_j));
+    hash.update(compress_default(&(ProjectivePoint::GENERATOR * s_i)));
+    hash.update(context);
+
+    let pad = Zeroizing::new(hash.finalize().into());
+    reduce_secret_scalar_from_bytes(pad)
 }
 
 /// ChillDKG self-encryption pad.
@@ -73,15 +71,13 @@ pub fn self_pad(s_i: &Scalar, R_i: &ProjectivePoint, context: &[u8]) -> SecretSc
     let seckey_bytes: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
         Zeroizing::from(ScalarBytes::from(s_i.to_bytes()));
 
-    let mut data = Zeroizing::new(Vec::with_capacity(
-        EC_SCALAR_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + context.len(),
-    ));
-    data.extend_from_slice(seckey_bytes.as_slice());
-    data.extend_from_slice(&compress_default(R_i));
-    data.extend_from_slice(context);
+    let mut hash = tagged_hasher(TAG_ENCAPS_MULTI_SELF_PAD);
+    hash.update(seckey_bytes.as_slice());
+    hash.update(compress_default(R_i));
+    hash.update(context);
 
-    let hash = Zeroizing::new(tagged_hash(TAG_ENCAPS_MULTI_SELF_PAD, &data));
-    reduce_secret_scalar_from_bytes(hash)
+    let pad = Zeroizing::new(hash.finalize().into());
+    reduce_secret_scalar_from_bytes(pad)
 }
 
 /// Encrypts this participant's VSS shares for all recipients.

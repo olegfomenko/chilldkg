@@ -1,11 +1,12 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::SecretScalar;
 use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, X_ONLY_POINT_BYTES_SIZE, compress_point_bip340,
-    compress_scalar_bip340, even_y_point, parse_scalar_from_bytes,
+    compress_scalar_bip340, even_y_point, parse_scalar_from_bytes, reduce_scalar_from_bytes,
 };
+use crate::crypto::tags::TAG_BIP340_CHALLENGE;
+use crate::crypto::{SecretScalar, tagged_hash};
 use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
@@ -29,7 +30,12 @@ pub trait SchnorrSigner {
         P_x: &BIP340XOnlyPubKey,
         d: &Scalar,
     ) -> Result<(BIP340XOnlyPubKey, SecretScalar)>;
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
+
+    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
+        let message = self.message();
+        bip340_challenge(R, P, message)
+    }
+
     fn sign(&self) -> Result<SchnorrSignature> {
         chill_dkg_ensure!(
             !bool::from(self.secret_key().is_zero()),
@@ -58,7 +64,11 @@ pub trait SchnorrVerifier {
             compress_point_bip340(&self.pub_key()),
         )
     }
-    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar>;
+    fn challenge(&self, R: &BIP340XOnlyPubKey, P: &BIP340XOnlyPubKey) -> Result<Scalar> {
+        let message = self.message();
+        bip340_challenge(R, P, message)
+    }
+
     fn verify(&self, sig: SchnorrSignature) -> Result<()> {
         chill_dkg_ensure!(
             !bool::from(self.pub_key().is_identity()),
@@ -97,4 +107,15 @@ pub trait SchnorrVerifier {
 
         Ok(())
     }
+}
+
+pub fn bip340_challenge(
+    R: &BIP340XOnlyPubKey,
+    P: &BIP340XOnlyPubKey,
+    message: &[u8],
+) -> Result<Scalar> {
+    Ok(reduce_scalar_from_bytes(tagged_hash(
+        TAG_BIP340_CHALLENGE,
+        [R, P, message].concat(),
+    )))
 }

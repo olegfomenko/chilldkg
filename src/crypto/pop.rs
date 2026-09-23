@@ -2,16 +2,16 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
-    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, X_ONLY_POINT_BYTES_SIZE,
-    compress_scalar_bip340, reduce_secret_scalar_from_bytes,
+    BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_scalar_bip340,
+    reduce_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
-use crate::crypto::{SecretScalar, tagged_hash};
+use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
 use crate::errors::{ChillDkgError, Result};
-use k256::elliptic_curve::ops::Reduce;
-use k256::{ProjectivePoint, Scalar, U256};
+use k256::{ProjectivePoint, Scalar};
+use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// Generates Proof of Possession (a Schnorr signature):
@@ -77,14 +77,12 @@ impl SchnorrSigner for PopSigner {
             t[i] ^= aux_hash[i];
         }
 
-        let mut nonce_preimage = Zeroizing::new(Vec::with_capacity(
-            EC_SCALAR_BYTES_SIZE + X_ONLY_POINT_BYTES_SIZE + 4,
-        ));
-        nonce_preimage.extend_from_slice(t.as_slice());
-        nonce_preimage.extend_from_slice(P_x);
-        nonce_preimage.extend_from_slice(self.message());
+        let mut hash = tagged_hasher(TAG_POP_NONCE);
+        hash.update(t.as_slice());
+        hash.update(P_x);
+        hash.update(self.message());
 
-        let preimage_bytes = Zeroizing::new(tagged_hash(TAG_POP_NONCE, &nonce_preimage));
+        let preimage_bytes = Zeroizing::new(hash.finalize().into());
         let k = reduce_secret_scalar_from_bytes(preimage_bytes);
 
         chill_dkg_ensure!(
@@ -139,15 +137,10 @@ fn get_pop_challenge(
     P: &BIP340XOnlyPubKey,
     message: &[u8],
 ) -> Result<Scalar> {
-    let mut challenge_preimage = Vec::with_capacity(X_ONLY_POINT_BYTES_SIZE * 2 + 4);
-    challenge_preimage.extend_from_slice(R);
-    challenge_preimage.extend_from_slice(P);
-    challenge_preimage.extend_from_slice(message);
-
-    Ok(Scalar::reduce(U256::from_be_slice(&tagged_hash(
+    Ok(reduce_scalar_from_bytes(tagged_hash(
         TAG_POP_CHALLENGE,
-        challenge_preimage,
-    ))))
+        [R, P, message].concat(),
+    )))
 }
 
 #[cfg(test)]

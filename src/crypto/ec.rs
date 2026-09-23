@@ -31,6 +31,12 @@ pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> 
     Ok(res)
 }
 
+/// reduce_scalar_from_bytes parses 32-byte array into Scalar, applying mod n operation,
+/// where n is the field order.
+pub fn reduce_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Scalar {
+    <Scalar as Reduce<U256>>::reduce_bytes(&x.into())
+}
+
 /// parse_secret_scalar_from_bytes parses 32-byte array into Scalar.
 /// Compared to parse_scalar_from_bytes it accepts Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>
 /// to make sure that the secret value will be carefully filled with zeros on drop.
@@ -78,15 +84,19 @@ pub fn compress_point_bip340(point: &ProjectivePoint) -> BIP340XOnlyPubKey {
     point.to_affine().x().into()
 }
 
+/// Returns true if the point has an even y coordinate.
+/// The identity point is treated as even.
+pub fn has_even_y(point: &ProjectivePoint) -> bool {
+    if bool::from(point.is_identity()) {
+        true
+    } else {
+        !bool::from(point.to_affine().y_is_odd())
+    }
+}
+
 /// Forces point to be even-y
 pub fn even_y_point(point: &ProjectivePoint) -> ProjectivePoint {
-    if bool::from(point.is_identity()) {
-        ProjectivePoint::IDENTITY
-    } else if bool::from(point.to_affine().y_is_odd()) {
-        -point
-    } else {
-        *point
-    }
+    if has_even_y(point) { *point } else { -point }
 }
 
 /// Deserializes a compressed SEC1 secp256k1 point.

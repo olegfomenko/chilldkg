@@ -10,8 +10,8 @@ use crate::crypto::enc::{decrypt, encrypt};
 use crate::crypto::poly::Polynomial;
 use crate::crypto::pop::{PopSigner, PopVerifier};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
-use crate::crypto::tagged_hash;
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
+use crate::crypto::{tagged_hash, tagged_hasher};
 use crate::errors::{ChillDkgError, Result};
 use crate::msg::{CoordinatorMsg1, RecoveryData};
 use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
@@ -21,6 +21,7 @@ use crate::party::{
 };
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
+use sha2::Digest;
 use zeroize::Zeroizing;
 
 pub(crate) fn serialize_enc_context(t: usize, host_pubkeys: &[ProjectivePoint]) -> Vec<u8> {
@@ -42,14 +43,12 @@ pub(crate) fn derive_simpl_seed(
     let seed: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]> =
         Zeroizing::from(ScalarBytes::from(s.to_bytes()));
 
-    let mut preimage = Zeroizing::new(Vec::with_capacity(
-        EC_SCALAR_BYTES_SIZE + random.len() + enc_context.len(),
-    ));
-    preimage.extend_from_slice(seed.as_slice());
-    preimage.extend_from_slice(random);
-    preimage.extend_from_slice(enc_context);
+    let mut hash = tagged_hasher(TAG_ENCPEDPOP_SEED);
+    hash.update(seed.as_slice());
+    hash.update(random);
+    hash.update(enc_context);
 
-    tagged_hash(TAG_ENCPEDPOP_SEED, &preimage).into()
+    Zeroizing::new(hash.finalize().into())
 }
 
 impl ParticipantState for ParticipantInitialState {
