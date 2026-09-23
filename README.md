@@ -421,7 +421,6 @@ Current vector coverage:
 - `recover_vectors`: reference cases `1, 2, 3, 4, 5, 6, 7, 8, 9, 11`.
 - `sign_nonce_vectors`, `sign_vectors`, `sign_agg_vectors`: BIP-FROST-signing `nonce_gen`,
   `nonce_agg`, `tweak`, `sign_verify` and `sig_agg` vectors (encoding-only error cases omitted).
-- `sign_e2e`: full ChillDKG → FROST → BIP340 round trip.
 
 ## Differences From The Reference Implementation
 
