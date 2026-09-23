@@ -112,25 +112,20 @@ pub fn sample_nonce(
 }
 
 fn sample_nonce_internal(
-    rand_: Zeroizing<[u8; 32]>,
+    mut rand: Zeroizing<[u8; 32]>,
     secshare: Option<&Scalar>,
     pubshare: Option<&ProjectivePoint>,
     thresh_pk: Option<&ProjectivePoint>,
     msg: Option<&[u8]>,
     extra_in: Option<&[u8]>,
 ) -> Result<(PubNonce, SecNonce)> {
-    // If secshare is provided - xor with current randomness
-    let rand = match secshare {
-        Some(secshare) => {
-            let mut rand = Zeroizing::new(tagged_hash(TAG_FROST_AUX, rand_.as_ref()));
-            let secshare_bytes = Zeroizing::new(secshare.to_bytes());
-            for (r, s) in rand.iter_mut().zip(secshare_bytes.iter()) {
-                *r ^= s;
-            }
-            rand
+    if let Some(secshare) = secshare {
+        rand = Zeroizing::new(tagged_hash(TAG_FROST_AUX, rand));
+        let secshare_bytes = Zeroizing::new(secshare.to_bytes());
+        for (r, s) in rand.iter_mut().zip(secshare_bytes.iter()) {
+            *r ^= s;
         }
-        None => rand_,
-    };
+    }
 
     let k1 = nonce_hash(&rand, pubshare, thresh_pk, msg, extra_in, 0)?;
     let k2 = nonce_hash(&rand, pubshare, thresh_pk, msg, extra_in, 1)?;
