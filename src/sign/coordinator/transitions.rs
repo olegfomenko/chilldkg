@@ -3,7 +3,7 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::ec::compress_point_bip340;
 use crate::crypto::schnorr::{SchnorrSignature, bip340_challenge};
-use crate::crypto::tweak::TweakContext;
+use crate::crypto::tweak::{Tweak, TweakContext};
 use crate::sign::coordinator::verify::{
     aggr_pubnonces, combine, signing_nonce, validate_signers, verify,
 };
@@ -40,8 +40,6 @@ impl CoordinatorState for CoordinatorInitialState {
             t: self.t,
             pubshares: self.pubshares,
             threshold_pubkey: self.threshold_pubkey,
-            msg: self.msg,
-            tweaks: self.tweaks,
             pubnonces: pubnonces.clone().into_iter().collect(),
         };
 
@@ -50,8 +48,9 @@ impl CoordinatorState for CoordinatorInitialState {
 }
 
 impl CoordinatorState for CoordinatorStep1State {
-    /// The partial signatures, paired with their participant ids.
-    type Message = Vec<(usize, PartialSignature)>;
+    /// The partial signatures, paired with their participant ids, the
+    /// message and the tweaks.
+    type Message = (Vec<(usize, PartialSignature)>, Vec<u8>, Vec<Tweak>);
     type Next = Self;
     /// The final BIP340 signature.
     type Output = SchnorrSignature;
@@ -60,7 +59,8 @@ impl CoordinatorState for CoordinatorStep1State {
     /// and public share (an invalid one is reported as
     /// [`SignError::InvalidContribution`] naming the participant), combines
     /// them and checks the result verifies under the tweaked threshold key.
-    fn next(self, psigs: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+        let (psigs, msg, tweaks) = msg;
         let psigs: BTreeMap<usize, PartialSignature> = psigs.into_iter().collect();
         chill_dkg_ensure!(
             self.pubnonces.keys().eq(psigs.keys()),
@@ -76,18 +76,14 @@ impl CoordinatorState for CoordinatorStep1State {
 
         let ids: Vec<usize> = input.keys().cloned().collect();
 
-        let tweak_ctx = TweakContext::new(self.threshold_pubkey).apply_all(&self.tweaks)?;
+        let tweak_ctx = TweakContext::new(self.threshold_pubkey).apply_all(&tweaks)?;
         let (b, R) = signing_nonce(
             &ids,
             aggr_pubnonces(input.values().map(|(pubnonce, _)| pubnonce)),
             &tweak_ctx,
-            &self.msg,
+            &msg,
         );
-        let e = bip340_challenge(
-            &compress_point_bip340(&R),
-            &tweak_ctx.xonly_pubkey(),
-            &self.msg,
-        )?;
+        let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), &msg)?;
 
         for (id, (pubnonce, psig)) in &input {
             partial_verify(
@@ -104,7 +100,7 @@ impl CoordinatorState for CoordinatorStep1State {
         }
 
         let sig = combine(input.values().map(|(_, psig)| psig), &tweak_ctx, &R, e);
-        verify(&self.threshold_pubkey, sig, &self.msg, &self.tweaks)
+        verify(&self.threshold_pubkey, sig, &msg, &tweaks)
             .map_err(|_| SignError::Runtime("aggregated signature does not verify".into()))?;
 
         Ok((None, sig))

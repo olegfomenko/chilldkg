@@ -92,10 +92,10 @@ mod tests {
         let res5 = p5.finalize(msg2_resp.clone()).unwrap();
 
         #[cfg(feature = "signing")]
-        let signers = [
-            sign::SignerInitialState::from(&res1.0),
-            sign::SignerInitialState::from(&res2.0),
-            sign::SignerInitialState::from(&res3.0),
+        let mut signers = [
+            sign::Signer::new(&res1.0),
+            sign::Signer::new(&res2.0),
+            sign::Signer::new(&res3.0),
         ];
 
         for (i, res) in [res1, res2, res3, res4, res5].iter().enumerate() {
@@ -127,7 +127,6 @@ mod tests {
         // Create and verify a signature with 3 of 5.
         #[cfg(feature = "signing")]
         {
-            use crate::sign::{CoordinatorState, SignerState};
             use rand_core::RngCore;
             use sha2::{Digest, Sha256};
 
@@ -135,34 +134,33 @@ mod tests {
             let tweaks = vec![sign::Tweak::xonly([0x42u8; 32])];
 
             // Signers generate their nonces before the message and the tweaks
-            // are known; both reach them only at the signing round.
-            let coordinator =
-                sign::CoordinatorInitialState::new(&output, msg.clone(), tweaks.clone()).unwrap();
+            // are known; both reach every party only at the signing round.
+            let mut coordinator = sign::Coordinator::new(&output);
 
             // Round 1: every signer publishes a nonce.
             let mut pubnonces = Vec::new();
-            let mut waiting = Vec::new();
-            for signer in signers {
+            for signer in &mut signers {
                 let mut random = [0u8; 32];
                 rng.fill_bytes(&mut random);
-                let (next, pubnonce) = signer.next((None, None, random)).unwrap();
-                pubnonces.push(pubnonce);
-                waiting.push(next.unwrap());
+                pubnonces.push(signer.step1((None, None, random)).unwrap());
             }
-            let (coordinator, relayed) = coordinator.next(pubnonces).unwrap();
+            let relayed = coordinator.step1(pubnonces).unwrap();
 
             // Round 2: every signer produces its partial signature.
-            let psigs: Vec<_> = waiting
-                .into_iter()
+            let psigs: Vec<_> = signers
+                .iter_mut()
                 .map(|signer| {
                     signer
-                        .next((relayed.clone(), msg.clone(), tweaks.clone()))
+                        .finalize((relayed.clone(), msg.clone(), tweaks.clone()))
                         .unwrap()
-                        .1
                 })
                 .collect();
-            let (_, sig) = coordinator.unwrap().next(psigs).unwrap();
+            let sig = coordinator
+                .step2((psigs, msg.clone(), tweaks.clone()))
+                .unwrap();
 
+            assert!(signers.iter().all(sign::Signer::is_successful));
+            assert!(coordinator.is_successful());
             sign::verify(&output.threshold_pubkey, sig, &msg, &tweaks).unwrap();
             assert!(sign::verify(&output.threshold_pubkey, sig, &msg, &[]).is_err());
         }

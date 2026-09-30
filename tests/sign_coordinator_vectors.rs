@@ -52,15 +52,13 @@ fn tweaks(tweaks: &[(&str, bool)]) -> Vec<Tweak> {
 #[test]
 fn test_coordinator_step1_passes() {
     let key = key_material();
-    let msg =
-        hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
     let pubnonces = pubnonces();
 
     // Signer subsets from the `sign_verify` valid vectors.
     for ids in [vec![0, 1], vec![1, 0], vec![1, 2], vec![0, 1, 2]] {
         let input: Vec<_> = ids.iter().map(|&id| (id, pubnonces[id].clone())).collect();
 
-        let initial = CoordinatorInitialState::new(&key, msg.clone(), vec![]).unwrap();
+        let initial = CoordinatorInitialState::new(&key);
         let (next, relayed) = initial.next(input.clone()).unwrap();
 
         // The list is relayed as received and remembered by id.
@@ -78,8 +76,6 @@ fn test_coordinator_step1_passes() {
 #[test]
 fn test_coordinator_step1_rejects_invalid_inputs() {
     let key = key_material();
-    let msg =
-        hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
     let pubnonces = pubnonces();
     let identity = PubNonce {
         R1: ProjectivePoint::IDENTITY,
@@ -140,8 +136,6 @@ fn test_coordinator_step1_rejects_invalid_inputs() {
             t: key.t,
             pubshares: pubshares.iter().map(|&i| key.pubshares[i]).collect(),
             threshold_pubkey: key.threshold_pubkey,
-            msg: msg.clone(),
-            tweaks: vec![],
         };
         let err = initial.next(input).err().unwrap();
         assert_eq!(err, expected_error);
@@ -247,9 +241,12 @@ fn test_coordinator_finalize_passes() {
             .map(|&(id, psig)| (id, parse_scalar_hex(psig).unwrap()))
             .collect();
 
-        let initial = CoordinatorInitialState::new(&key, msg.clone(), tweaks(&tweaks_hex)).unwrap();
+        let initial = CoordinatorInitialState::new(&key);
         let (next, _) = initial.next(input).unwrap();
-        let (next, sig) = next.unwrap().next(psigs).unwrap();
+        let (next, sig) = next
+            .unwrap()
+            .next((psigs, msg.clone(), tweaks(&tweaks_hex)))
+            .unwrap();
         assert!(next.is_none());
         assert_eq!(hex::encode_upper(sig), expected);
     }
@@ -326,11 +323,9 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
             t: key.t,
             pubshares: key.pubshares.clone(),
             threshold_pubkey: key.threshold_pubkey,
-            msg: msg.clone(),
-            tweaks: vec![],
             pubnonces: ids.iter().map(|&id| (id, pubnonces[id].clone())).collect(),
         };
-        let err = state.next(psigs).err().unwrap();
+        let err = state.next((psigs, msg.clone(), vec![])).err().unwrap();
         assert_eq!(err, expected_error);
     }
 }
