@@ -3,8 +3,8 @@
 use chilldkg_rs::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg_rs::crypto::ec::{EC_SCALAR_BYTES_SIZE, parse_scalar_from_bytes};
 use chilldkg_rs::crypto::schnorr::SCHNORR_SIG_BYTES_SIZE;
-use chilldkg_rs::errors::{ChillDkgError, Result};
-use chilldkg_rs::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
+use chilldkg_rs::dkg::errors::{ChillDkgError, Result};
+use chilldkg_rs::dkg::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 

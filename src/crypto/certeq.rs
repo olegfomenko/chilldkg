@@ -10,7 +10,7 @@ use crate::crypto::pop::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_BIP340_AUX, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE};
 use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};

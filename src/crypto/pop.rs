@@ -9,7 +9,7 @@ pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
 use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};

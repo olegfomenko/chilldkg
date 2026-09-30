@@ -7,7 +7,7 @@ use crate::crypto::ec::{
 };
 use crate::crypto::tags::TAG_BIP340_CHALLENGE;
 use crate::crypto::{SecretScalar, tagged_hash};
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::{ProjectivePoint, Scalar};

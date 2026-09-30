@@ -14,7 +14,7 @@ use crate::crypto::ec::{
     BIP340XOnlyPubKey, CompressedPubKey, ScalarBytes, compress_default, compress_point_bip340,
     has_even_y, parse_scalar_from_bytes,
 };
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -114,7 +114,6 @@ impl TweakContext {
     }
 
     /// The tweaked key in 33-byte compressed encoding.
-    #[expect(dead_code)]
     pub fn compressed_pubkey(&self) -> CompressedPubKey {
         compress_default(&self.q)
     }

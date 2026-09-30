@@ -6,7 +6,7 @@ use crate::crypto::ec::{
 };
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
 use crate::crypto::{SecretScalar, tagged_hasher};
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::Zeroizing;

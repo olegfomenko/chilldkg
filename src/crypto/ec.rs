@@ -3,7 +3,7 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::tags::TAG_TAP_TWEAK;
 use crate::crypto::{SecretScalar, tagged_hash};
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::{LinearCombinationExt, Reduce};
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};

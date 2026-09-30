@@ -12,10 +12,10 @@ use crate::crypto::pop::{PopSigner, PopVerifier};
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_ENCPEDPOP_SECNONCE, TAG_ENCPEDPOP_SEED};
 use crate::crypto::{tagged_hash, tagged_hasher};
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{CoordinatorMsg1, RecoveryData};
-use crate::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
-use crate::party::{
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{CoordinatorMsg1, RecoveryData};
+use crate::dkg::msg::{CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2};
+use crate::dkg::party::{
     DKGOutput, ParticipantInitialState, ParticipantState, ParticipantStep1State,
     ParticipantStep2State,
 };

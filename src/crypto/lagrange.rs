@@ -7,7 +7,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::errors::{ChillDkgError, Result};
+use crate::dkg::errors::{ChillDkgError, Result};
 use itertools::Itertools;
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};

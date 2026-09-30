@@ -31,13 +31,17 @@ building blocks used by the protocol.
 
 ## Implementation
 
-- `src/party`: participant state machine.
-- `src/coordinator`: coordinator state machine.
-- `src/msg.rs`: typed protocol messages and recovery data.
-- `src/errors.rs`: ChillDKG-style error names.
-- `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, CertEq helpers, and
-  Lagrange interpolation.
-- `src/sign` (feature `signing`): FROST3 nonces, signer, verifier/aggregator, and key tweaking.
+- `src/dkg/party`: participant state machine.
+- `src/dkg/coordinator`: coordinator state machine.
+- `src/dkg/msg.rs`: typed protocol messages and recovery data.
+- `src/dkg/errors.rs`: ChillDKG-style error names.
+- `src/crypto`: tagged hashing, point helpers, encryption pads, proof of possession, CertEq helpers,
+  Lagrange interpolation and key tweaking (the last two behind `signing`).
+- `src/sign` (feature `signing`): FROST3 signing, laid out like `src/dkg`.
+  - `src/sign/party`: signer state machine and nonce generation.
+  - `src/sign/coordinator`: coordinator state machine, verification and aggregation helpers.
+  - `src/sign/msg.rs`: public nonces and partial signatures.
+  - `src/sign/errors.rs`: `SignError`.
 - `tests`: unit tests and reference-vector integration tests.
 
 The API models the protocol as consuming state transitions. Each call to `next`
@@ -117,9 +121,9 @@ an error instead of advancing to the next state.
 
 ## Example
 
-All messages are defined in `chilldkg_rs::msg::*`. The outputs are
-`chilldkg_rs::msg::CoordinatorDKGOutput` and `chilldkg_rs::msg::DKGOutput`. The recovery data is
-`chilldkg_rs::msg::RecoveryData`.
+All messages are defined in `chilldkg_rs::dkg::msg::*`. The outputs are
+`chilldkg_rs::dkg::msg::CoordinatorDKGOutput` and `chilldkg_rs::dkg::msg::DKGOutput`. The recovery data is
+`chilldkg_rs::dkg::msg::RecoveryData`. Errors are `chilldkg_rs::dkg::ChillDkgError`.
 
 ### State-machine level
 
@@ -127,10 +131,10 @@ The low-level state machine is exposed and can be used as well. Check tests in [
 You may need the following imports:
 
 ```rust
-use chilldkg_rs::coordinator::{CoordinatorInitialState, CoordinatorState};
-use chilldkg_rs::msg::*;
-use chilldkg_rs::party::{
-    ParticipantInitialState, ParticipantState, ParticipantStep1State, ParticipantStep2State,
+use chilldkg_rs::dkg::msg::*;
+use chilldkg_rs::dkg::{
+    CoordinatorInitialState, CoordinatorState, ParticipantInitialState, ParticipantState,
+    ParticipantStep1State, ParticipantStep2State, Result,
 };
 ```
 
@@ -213,7 +217,8 @@ fn main() -> Result<()> {
 For engineers convenience we also introduce high-level SDK over state-machine. You may need the following imports:
 
 ```rust
-use chilldkg_rs::{Coordinator, Participant};
+use chilldkg_rs::dkg::Result;
+use chilldkg_rs::dkg::{Coordinator, Participant};
 ```
 
 Then, the code for participant is:
@@ -273,7 +278,7 @@ To recover DKG results on the participants side, you have to provide participant
 follows:
 
 ```rust
-use chilldkg_rs::{Coordinator, Participant};
+use chilldkg_rs::dkg::{Coordinator, Participant};
 
 fn main() -> Result<()> {
     // ...
@@ -290,11 +295,12 @@ fn main() -> Result<()> {
 
 ## Signing
 
-FROST signing over a ChillDKG output is available behind the `signing` feature:
+FROST signing over a ChillDKG output lives behind the `signing` feature, which is enabled
+by default. Opt out for a DKG-only build:
 
 ```toml
 [dependencies]
-chilldkg-rs = { version = "0.4", features = ["signing"] }
+chilldkg-rs = { version = "0.4", default-features = false }
 ```
 
 It follows the [BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing) reference
@@ -302,20 +308,43 @@ It follows the [BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing) r
 BIP340 signature under the threshold public key. Participant ids are the ChillDKG indices,
 and the subset that signs is simply the set of ids that contribute a nonce.
 
-You may need the following imports:
+Like the DKG, signing is modelled as consuming state transitions: each `next` call
+takes the input for the current round, returns the next state and the message or output
+of that round. A signer may generate its nonce before the message and the tweaks are
+known (they are passed as `None` at round 1 and are then required at round 2); when they
+are known up front, passing them at round 1 binds the nonce to them and round 2 refuses
+anything else. The coordinator knows both when it starts a session. You may need the
+following imports:
 
 ```rust
-use chilldkg_rs::sign::{sample_nonce, PartialSignature, PubNonce, Signer, Tweak, Verifier};
+use chilldkg_rs::dkg::msg::{CoordinatorDKGOutput, DKGOutput};
+use chilldkg_rs::sign::errors::Result;
+use chilldkg_rs::sign::{
+    CoordinatorInitialState, CoordinatorState, SignerInitialState, SignerState, Tweak,
+};
 ```
 
-The two roles hold only the long-lived DKG key material and are reused across signing sessions:
+```mermaid
+stateDiagram-v2
+    [*] --> SignerInitialState: from(&DKGOutput)
+    SignerInitialState --> SignerStep1State: next((msg?, tweaks?, random)) → (idx, PubNonce)
+    SignerInitialState --> Failed: .next() call failed
+    SignerStep1State --> Success: next((pubnonces, msg, tweaks)) → (idx, PartialSignature)
+    SignerStep1State --> Failed: .next() call failed
+    Success --> [*]
+    Failed --> [*]
+```
 
-- `Signer` — a participant's index, secret share and the threshold key (`From<&DKGOutput>`).
-- `Verifier` — threshold `t`, public shares and the threshold key (`From<&DKGOutput>` or
-  `From<&CoordinatorDKGOutput>`); used by the coordinator to check and combine partial
-  signatures, and by anyone to verify the final signature.
-
-Everything specific to one signing (message, tweaks, nonces) is passed per call.
+```mermaid
+stateDiagram-v2
+    [*] --> CoordinatorInitialState: new(&CoordinatorDKGOutput, msg, tweaks)
+    CoordinatorInitialState --> CoordinatorStep1State: next(pubnonces) → pubnonces to relay
+    CoordinatorInitialState --> Failed: .next() call failed
+    CoordinatorStep1State --> Success: next(psigs) → SchnorrSignature
+    CoordinatorStep1State --> Failed: .next() call failed
+    Success --> [*]
+    Failed --> [*]
+```
 
 ### Participant
 
@@ -323,29 +352,23 @@ Everything specific to one signing (message, tweaks, nonces) is passed per call.
 fn main() -> Result<()> {
     // ...
 
-    // Built once from the DKG output, reused for every signing.
-    let signer = Signer::from(&output);
+    // One state per signing session, built from the DKG output.
+    let signer = SignerInitialState::from(&output);
 
-    // Round 1: generate a nonce pair for this session. All optional inputs are
-    // recommended: they bind the nonce to the share, key and message.
-    let (pubnonce, secnonce) = sample_nonce(
-        &mut rng,
-        Some(&output.secshare),
-        Some(&output.pubshares[output.idx]),
-        Some(&output.threshold_pubkey),
-        Some(msg),
-        None,
-    )?;
-    // TODO: make sure that you stored secnonce securely
-    
-    // TODO: send (output.idx, pubnonce) to the coordinator, keep secnonce
+    // Round 1: derive a nonce pair bound to the share, the (tweaked) key and
+    // the message; `random` must be 32 fresh random bytes. Pass `None` for the
+    // message and/or tweaks to generate the nonce before they are known.
+    let (next, pubnonce) = signer.next((Some(msg.to_vec()), Some(tweaks.clone()), random))?;
+    let signer = next.unwrap();
+    // TODO: send `pubnonce` (already paired with this participant's id) to the coordinator
 
     // TODO: receive the (id, pubnonce) list of all signers from the coordinator
 
-    // Round 2: produce the partial signature. `secnonce` is consumed here and
-    // cannot be used twice.
-    let psig = signer.sign(msg, &[], secnonce, &pubnonces)?;
-    // TODO: send (output.idx, psig) to the coordinator
+    // Round 2: produce the partial signature. The state (and with it the
+    // secret nonce) is consumed here, so a nonce can never be used twice.
+    // The message and tweaks must match the ones given at round 1, if any.
+    let (_, psig) = signer.next((pubnonces, msg.to_vec(), tweaks.clone()))?;
+    // TODO: send `psig` (already paired with this participant's id) to the coordinator
 }
 ```
 
@@ -355,27 +378,27 @@ fn main() -> Result<()> {
 fn main() -> Result<()> {
     // ...
 
-    let verifier = Verifier::from(&coordinator_output);
-    
-    // TODO: select t of n signers, request nonce generation
+    let coordinator =
+        CoordinatorInitialState::new(&coordinator_output, msg.to_vec(), tweaks.clone())?;
 
-    // TODO: collect (id, pubnonce) from at least t participants, relay the
-    // list to them, then collect their partial signatures
+    // TODO: select at least t signers and collect their (id, pubnonce)
 
-    // Checks every partial signature (a bad one is reported as
-    // FaultyParticipant { participant: id, .. }) and combines them into a
-    // 64-byte BIP340 signature.
-    let contributions: Vec<(usize, PubNonce, PartialSignature)> = /* (id, pubnonce, psig) */;
-    let sig = verifier.verify_and_aggregate(&contributions, msg, &[])?;
+    // Round 1: validates the signing subset and its nonces before relaying.
+    let (next, relayed) = coordinator.next(pubnonces)?;
+    let coordinator = next.unwrap();
+    // TODO: send `relayed` to every signer, collect their (id, psig)
 
-    // Anyone can check the result under the threshold key.
-    verifier.verify(sig, msg, &[])?;
+    // Round 2: verifies every partial signature (a bad one is reported as
+    // InvalidContribution { participant: id, .. }), combines them and checks
+    // the result under the tweaked threshold key.
+    let (_, sig) = coordinator.next(psigs)?;
 }
 ```
 
-`Verifier::partial_verify` checks a single partial signature, and `Verifier::aggregate`
-combines partial signatures given only the aggregate nonce `(R1, R2)` — the reference's
-`partial_sig_agg` — without verifying them.
+Anyone holding only the public key material can use the stateless helpers:
+`sign::verify` checks a final signature under the (tweaked) threshold key and
+`sign::signing_pubkey` returns that key for external BIP340 verifiers; `sign::validate_signers`
+and `sign::partial_verify` are the lower-level building blocks the state machines use.
 
 ### Tweaks
 
@@ -389,12 +412,13 @@ let tweaks = [
     Tweak::xonly(taproot_tweak), // 32 bytes, applied to the even-y form of `Q`
 ];
 
-let psig = signer.sign(msg, &tweaks, secnonce, &pubnonces)?;
-let sig = verifier.verify_and_aggregate(&contributions, msg, &tweaks)?;
+let (next, pubnonce) =
+    SignerInitialState::from(&output).next((Some(msg.to_vec()), Some(tweaks.clone()), random))?;
+let coordinator = CoordinatorInitialState::new(&coordinator_output, msg.to_vec(), tweaks.clone())?;
 
 // The key the signature verifies under, for external BIP340 verifiers.
-let tweaked_pubkey = verifier.signing_pubkey(&tweaks)?;
-verifier.verify(sig, msg, &tweaks)?;
+let tweaked_pubkey = sign::signing_pubkey(&coordinator_output.threshold_pubkey, &tweaks)?;
+sign::verify(&coordinator_output.threshold_pubkey, sig, msg, &tweaks)?;
 ```
 
 Note that a ChillDKG threshold key already commits to an unspendable Taproot script path
@@ -406,10 +430,11 @@ needed to spend it as a key-path-only Taproot output.
 Run all tests:
 
 ```bash
-cargo test --all-features
+cargo test
 ```
 
-`cargo test` alone runs the DKG tests only; the `sign_*` targets require the `signing` feature.
+The `sign_*` targets require the `signing` feature (on by default); `cargo test --no-default-features`
+runs the DKG tests only.
 
 Current vector coverage:
 
@@ -419,8 +444,11 @@ Current vector coverage:
 - `coordinator_step1_vectors`: reference cases `1, 2, 4, 5`.
 - `coordinator_finalize_vectors`: reference cases `1, 2, 3`.
 - `recover_vectors`: reference cases `1, 2, 3, 4, 5, 6, 7, 8, 9, 11`.
-- `sign_nonce_vectors`, `sign_vectors`, `sign_agg_vectors`: BIP-FROST-signing `nonce_gen`,
-  `nonce_agg`, `tweak`, `sign_verify` and `sig_agg` vectors (encoding-only error cases omitted).
+- `sign_nonce_vectors`, `sign_vectors`: BIP-FROST-signing `nonce_gen`, `nonce_agg`, `tweak` and
+  `sign_verify` vectors (encoding-only error cases omitted).
+- `sign_coordinator_vectors`: the signing coordinator's two rounds, driven by the `sign_verify`
+  error and verify-fail vectors and the `sig_agg` valid vectors. The `sig_agg` vectors are also run
+  against the aggregation step alone in a unit test next to it.
 
 ## Differences From The Reference Implementation
 

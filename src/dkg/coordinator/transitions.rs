@@ -1,14 +1,14 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::coordinator::{
-    CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
-};
 use crate::crypto::certeq::{CertEQTranscript, CertEQVerifier};
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::schnorr::SchnorrVerifier;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{
+use crate::dkg::coordinator::{
+    CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
+};
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
 use k256::ProjectivePoint;

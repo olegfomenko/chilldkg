@@ -1,15 +1,23 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_hex_array, parse_point_hex, parse_pubnonce_hex, parse_scalar_hex};
-use chilldkg_rs::errors::ChillDkgError::Value;
-use chilldkg_rs::sign::{SecNonce, Signer, Tweak, Verifier};
+use chilldkg_rs::crypto::ec::compress_point_bip340;
+use chilldkg_rs::crypto::schnorr::bip340_challenge;
+use chilldkg_rs::crypto::tweak::TweakContext;
+use chilldkg_rs::dkg::msg::CoordinatorDKGOutput;
+use chilldkg_rs::sign::coordinator::verify::signing_nonce;
+use chilldkg_rs::sign::errors::SignError::Value;
+use chilldkg_rs::sign::{
+    PartialSignature, PubNonce, SecNonce, SignerState, SignerStep1State, Tweak, aggr_pubnonces,
+    partial_verify,
+};
 
 pub mod common;
 
-fn key_material() -> Verifier {
-    Verifier {
+fn key_material() -> CoordinatorDKGOutput {
+    CoordinatorDKGOutput {
         t: 2,
-        thresh_pk: parse_point_hex(
+        threshold_pubkey: parse_point_hex(
             "03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237",
         )
         .unwrap(),
@@ -32,6 +40,40 @@ fn secnonce(hex: &str) -> SecNonce {
     }
 }
 
+/// Verifies one partial signature the way the coordinator's round 2 does:
+/// derive `(b, R, e)` for the session, then check the equation.
+fn verify_one(
+    key: &CoordinatorDKGOutput,
+    psig: &PartialSignature,
+    id: usize,
+    pubnonces: &[(usize, PubNonce)],
+    msg: &[u8],
+) -> chilldkg_rs::sign::Result<()> {
+    let ids: Vec<usize> = pubnonces.iter().map(|(id, _)| *id).collect();
+    let tweak_ctx = TweakContext::new(key.threshold_pubkey)
+        .apply_all(&[])
+        .unwrap();
+    let (b, R) = signing_nonce(
+        &ids,
+        aggr_pubnonces(pubnonces.iter().map(|(_, n)| n)),
+        &tweak_ctx,
+        msg,
+    );
+    let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg).unwrap();
+    let (_, pubnonce) = pubnonces.iter().find(|(i, _)| *i == id).unwrap();
+    partial_verify(
+        psig,
+        id,
+        pubnonce,
+        &key.pubshares[id],
+        &ids,
+        &tweak_ctx,
+        b,
+        &R,
+        e,
+    )
+}
+
 fn tweaks(tweaks: &[(&str, bool)]) -> Vec<Tweak> {
     tweaks
         .iter()
@@ -44,15 +86,10 @@ fn tweaks(tweaks: &[(&str, bool)]) -> Vec<Tweak> {
 
 #[test]
 fn test_sign_passes() {
-    let verifier = key_material();
-    let signer = Signer::new(
-        0,
-        verifier.t,
-        &parse_scalar_hex("CCD2EF4559DB05635091D80189AB3544D6668EFC0500A8D5FF51A1F4D32CC1F1")
-            .unwrap(),
-        &verifier.pubshares,
-        verifier.thresh_pk,
-    );
+    let key = key_material();
+    let secshare =
+        parse_scalar_hex("CCD2EF4559DB05635091D80189AB3544D6668EFC0500A8D5FF51A1F4D32CC1F1")
+            .unwrap();
     let pubnonce_pool = [
         "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
         "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
@@ -255,15 +292,24 @@ fn test_sign_passes() {
         let tweaks = tweaks(&tweaks_hex);
         let msg = &msgs[msg_index];
 
-        let psig = signer
-            .sign(msg, &tweaks, secnonce("493A7862206B66B2D2E1B60583C8D3477D71EF66E5C628A30EF619665C86FE970057939BD14AB8EC43ACE8AA98CA359BBF0BF7432115DC52C173DD77104C1213"), &pubnonces)
+        // Participant 0 after round 1, with the vector's nonce.
+        let signer = SignerStep1State {
+            idx: 0,
+            t: key.t,
+            secshare,
+            pubshares: key.pubshares.clone(),
+            threshold_pubkey: key.threshold_pubkey,
+            msg: Some(msg.clone()),
+            tweaks: Some(tweaks.clone()),
+            secnonce: secnonce(
+                "493A7862206B66B2D2E1B60583C8D3477D71EF66E5C628A30EF619665C86FE970057939BD14AB8EC43ACE8AA98CA359BBF0BF7432115DC52C173DD77104C1213",
+            ),
+        };
+        let (_, (id, psig)) = signer
+            .next((pubnonces.clone(), msg.clone(), tweaks.clone()))
             .unwrap();
+        assert_eq!(id, my_id);
         assert_eq!(hex::encode_upper(psig.to_bytes()), expected);
-        assert!(
-            verifier
-                .partial_verify(&psig, my_id, &pubnonces, msg, &tweaks)
-                .is_ok()
-        );
     }
 }
 
@@ -288,8 +334,9 @@ fn test_sign_rejects_invalid_inputs() {
     let msg =
         hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
 
-    // The reference validates the signers context first, then the secret
-    // nonce and share; the caller-side `validate_signers` reproduces that order.
+    // The signing step reproduces the reference's check order: the secret
+    // nonce and share, then the signers context, then the signer's own id
+    // and public share.
     // (ids, verifier pubshares as pool indices, tweaks, my_id, secnonce index, secshare index, error)
     for (ids, pubshares, tweaks_hex, my_id, secnonce_index, secshare_index, expected_error) in [
         // Tweak exceeds the group order
@@ -409,29 +456,24 @@ fn test_sign_rejects_invalid_inputs() {
             Value("The signer's secret share value is out of range.".into()),
         ),
     ] {
-        let verifier = Verifier {
+        let key = key_material();
+        let signer = SignerStep1State {
+            idx: my_id,
+            t: key.t,
+            secshare: parse_scalar_hex(secshares[secshare_index]).unwrap(),
             pubshares: pubshares.iter().map(|&i| pubshare_pool[i]).collect(),
-            ..key_material()
+            threshold_pubkey: key.threshold_pubkey,
+            msg: Some(msg.clone()),
+            tweaks: Some(tweaks(&tweaks_hex)),
+            secnonce: secnonce(secnonces[secnonce_index]),
         };
-        let signer = Signer::new(
-            my_id,
-            verifier.t,
-            &parse_scalar_hex(secshares[secshare_index]).unwrap(),
-            &verifier.pubshares,
-            verifier.thresh_pk,
-        );
         let pubnonces: Vec<_> = ids
             .iter()
             .map(|&id| (id, pubnonce_pool[id % 3].clone()))
             .collect();
 
         let err = signer
-            .sign(
-                &msg,
-                &tweaks(&tweaks_hex),
-                secnonce(secnonces[secnonce_index]),
-                &pubnonces,
-            )
+            .next((pubnonces, msg.clone(), tweaks(&tweaks_hex)))
             .err()
             .unwrap();
         assert_eq!(err, expected_error);
@@ -440,7 +482,7 @@ fn test_sign_rejects_invalid_inputs() {
 
 #[test]
 fn test_verify_rejects_invalid_partial_signature() {
-    let verifier = key_material();
+    let key = key_material();
     let pubnonce_pool = [
         "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
         "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
@@ -469,10 +511,6 @@ fn test_verify_rejects_invalid_partial_signature() {
             .map(|&(id, i)| (id, pubnonce_pool[i].clone()))
             .collect();
         let psig = parse_scalar_hex(psig).unwrap();
-        assert!(
-            verifier
-                .partial_verify(&psig, my_id, &pubnonces, &msg, &[])
-                .is_err()
-        );
+        assert!(verify_one(&key, &psig, my_id, &pubnonces, &msg).is_err());
     }
 }

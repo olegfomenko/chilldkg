@@ -1,7 +1,7 @@
 use crate::crypto::ec::parse_secret_scalar_from_bytes;
 use crate::crypto::tags::TAG_VSS_COEFFS;
 use crate::crypto::{SecretScalar, tagged_hash};
-use crate::errors::Result;
+use crate::dkg::errors::Result;
 use k256::{ProjectivePoint, Scalar};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
