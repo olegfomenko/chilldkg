@@ -6,11 +6,10 @@ use crate::crypto::ec::{
     ScalarBytes, compress_default, compress_scalar_bip340, decompress_default,
     parse_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
-use crate::crypto::pop::SchnorrSignature;
-use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
+use crate::crypto::errors::{CryptoError, Result};
+use crate::crypto::schnorr::{SchnorrSignature, SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_BIP340_AUX, TAG_BIP340_NONCE, TAG_CERTEQ_MESSAGE};
 use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
-use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -100,12 +99,12 @@ impl From<&CertEQTranscript> for Vec<u8> {
 }
 
 impl TryFrom<(&[u8], usize)> for CertEQTranscript {
-    type Error = ChillDkgError;
+    type Error = CryptoError;
 
     fn try_from((bytes, n): (&[u8], usize)) -> std::result::Result<Self, Self::Error> {
         chill_dkg_ensure!(
             bytes.len() >= 4,
-            ChillDkgError::Runtime("invalid CertEq transcript length".into()),
+            CryptoError::Runtime("invalid CertEq transcript length".into()),
         );
 
         let t = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
@@ -116,7 +115,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
                         + COMPRESSED_POINT_BYTES_SIZE
                         + EC_SCALAR_BYTES_SIZE)
                         * n,
-            ChillDkgError::Runtime("invalid CertEq transcript length".into()),
+            CryptoError::Runtime("invalid CertEq transcript length".into()),
         );
 
         let mut offset = 4;
@@ -132,7 +131,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             offset += COMPRESSED_POINT_BYTES_SIZE;
             sum_commitment.push(
                 decompress_default(compressed)
-                    .ok_or_else(|| ChillDkgError::Runtime("invalid commitment point".into()))?,
+                    .ok_or_else(|| CryptoError::Runtime("invalid commitment point".into()))?,
             );
         }
 
@@ -141,8 +140,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
                 (&bytes[offset..offset + COMPRESSED_POINT_BYTES_SIZE]).try_into()?;
             offset += COMPRESSED_POINT_BYTES_SIZE;
             host_pubkeys.push(
-                decompress_default(compressed)
-                    .ok_or(ChillDkgError::InvalidHostPubkey { participant: i })?,
+                decompress_default(compressed).ok_or(CryptoError::InvalidPubkey { index: i })?,
             );
         }
 
@@ -152,7 +150,7 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
             offset += COMPRESSED_POINT_BYTES_SIZE;
             pubnonces.push(
                 decompress_default(compressed)
-                    .ok_or_else(|| ChillDkgError::Runtime("invalid public nonce point".into()))?,
+                    .ok_or_else(|| CryptoError::Runtime("invalid public nonce point".into()))?,
             );
         }
 
@@ -173,6 +171,12 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
     }
 }
 
+/// Checks every participant's signature of the transcript.
+///
+/// A certificate of the wrong length is reported as
+/// [`CryptoError::InvalidCertificate`]; a signature that does not verify as
+/// [`CryptoError::InvalidCertificateSignature`] naming the participant. The
+/// protocol decides whom to blame for each.
 pub fn verify_certeq_certificate(
     transcript: &CertEQTranscript,
     cert: &[SchnorrSignature],
@@ -181,17 +185,18 @@ pub fn verify_certeq_certificate(
 
     chill_dkg_ensure!(
         cert.len() == host_pubkeys.len(),
-        ChillDkgError::FaultyCoordinator("invalid certificate length".into(),),
+        CryptoError::InvalidCertificate("invalid certificate length".into()),
     );
 
     for i in 0..host_pubkeys.len() {
         if let Err(err) = CertEQVerifier::new(host_pubkeys[i], transcript, i).verify(cert[i]) {
-            return Err(ChillDkgError::FaultyParticipantOrCoordinator {
-                participant: i,
+            return Err(CryptoError::InvalidCertificateSignature {
+                index: i,
                 message: format!(
                     "Participant has provided an invalid signature for the certificate, error = {:?}",
                     err
-                ).into(),
+                )
+                .into(),
             });
         }
     }
@@ -254,7 +259,7 @@ impl SchnorrSigner for CertEQSigner {
 
         chill_dkg_ensure!(
             !bool::from(k0.is_zero()),
-            ChillDkgError::Runtime("CertEq signing failed: BIP340: nonce is zero".into()),
+            CryptoError::Runtime("CertEq signing failed: BIP340: nonce is zero".into()),
         );
 
         Ok(compress_scalar_bip340(&k0))

@@ -1,6 +1,7 @@
 pub mod certeq;
 pub mod ec;
 pub mod enc;
+pub mod errors;
 #[cfg(feature = "signing")]
 pub mod lagrange;
 pub mod poly;

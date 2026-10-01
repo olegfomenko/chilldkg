@@ -5,11 +5,11 @@ use crate::crypto::ec::{
     BIP340XOnlyPubKey, EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_scalar_bip340,
     reduce_scalar_from_bytes, reduce_secret_scalar_from_bytes,
 };
+use crate::crypto::errors::{CryptoError, Result};
 pub use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::schnorr::{SchnorrSigner, SchnorrVerifier};
 use crate::crypto::tags::{TAG_POP_AUX, TAG_POP_CHALLENGE, TAG_POP_NONCE, TAG_SIMPLPEDPOP_AUX};
 use crate::crypto::{SecretScalar, tagged_hash, tagged_hasher};
-use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -87,7 +87,7 @@ impl SchnorrSigner for PopSigner {
 
         chill_dkg_ensure!(
             !bool::from(k.is_zero()),
-            ChillDkgError::Runtime("PoP generation failed: BIP340: nonce is zero".into()),
+            CryptoError::Runtime("PoP generation failed: BIP340: nonce is zero".into()),
         );
 
         Ok(compress_scalar_bip340(&k))

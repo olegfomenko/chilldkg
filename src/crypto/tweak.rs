@@ -14,7 +14,7 @@ use crate::crypto::ec::{
     BIP340XOnlyPubKey, CompressedPubKey, ScalarBytes, compress_default, compress_point_bip340,
     has_even_y, parse_scalar_from_bytes,
 };
-use crate::dkg::errors::{ChillDkgError, Result};
+use crate::crypto::errors::{CryptoError, Result};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -86,12 +86,12 @@ impl TweakContext {
         };
 
         let twk = parse_scalar_from_bytes(tweak.value)
-            .map_err(|_| ChillDkgError::Value("The tweak value is out of range.".into()))?;
+            .map_err(|_| CryptoError::Value("The tweak value is out of range.".into()))?;
 
         let q = self.q * g + ProjectivePoint::GENERATOR * twk;
         chill_dkg_ensure!(
             !bool::from(q.is_identity()),
-            ChillDkgError::Value("The result of tweaking cannot be infinity.".into()),
+            CryptoError::Value("The result of tweaking cannot be infinity.".into()),
         );
 
         Ok(Self {

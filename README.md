@@ -44,7 +44,8 @@ building blocks used by the protocol.
   - `src/sign/errors.rs`: `SignError`.
 - `src/crypto`: tagged hashing, point helpers, BIP340 challenge, encryption pads, proof of
   possession, CertEq helpers, Lagrange interpolation and key tweaking (the last two behind
-  `signing`).
+  `signing`). Reports through its own `CryptoError` (`src/crypto/errors.rs`), which `dkg` and
+  `sign` convert into their protocol errors.
 - `tests`: reference-vector integration tests; unit tests sit next to the code they cover.
 
 ## References

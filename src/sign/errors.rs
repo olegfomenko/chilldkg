@@ -1,4 +1,4 @@
-use crate::dkg::errors::ChillDkgError;
+use crate::crypto::errors::CryptoError;
 use std::borrow::Cow;
 use thiserror::Error;
 
@@ -24,13 +24,13 @@ pub enum SignError {
 
 pub type Result<T> = std::result::Result<T, SignError>;
 
-/// The crypto primitives report through the DKG error type; only its
-/// `Value` and `Runtime` variants can reach signing.
-impl From<ChillDkgError> for SignError {
-    fn from(e: ChillDkgError) -> Self {
+/// Crypto failures keep their class. Signing never decodes keys or checks
+/// certificates, so those failures cannot occur here and are internal errors.
+impl From<CryptoError> for SignError {
+    fn from(e: CryptoError) -> Self {
         match e {
-            ChillDkgError::Value(message) => SignError::Value(message),
-            ChillDkgError::Runtime(message) => SignError::Runtime(message),
+            CryptoError::Value(message) => SignError::Value(message),
+            CryptoError::Runtime(message) => SignError::Runtime(message),
             other => SignError::Runtime(other.to_string().into()),
         }
     }

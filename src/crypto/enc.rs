@@ -4,9 +4,9 @@ use crate::chill_dkg_ensure;
 use crate::crypto::ec::{
     EC_SCALAR_BYTES_SIZE, ScalarBytes, compress_default, ecdh, reduce_secret_scalar_from_bytes,
 };
+use crate::crypto::errors::{CryptoError, Result};
 use crate::crypto::tags::{TAG_ENCAPS_MULTI_SELF_PAD, TAG_ENCPEDPOP_ECDH};
 use crate::crypto::{SecretScalar, tagged_hasher};
-use crate::dkg::errors::{ChillDkgError, Result};
 use k256::{ProjectivePoint, Scalar};
 use sha2::Digest;
 use zeroize::Zeroizing;
@@ -103,11 +103,11 @@ pub fn encrypt(
 ) -> Result<Vec<Scalar>> {
     chill_dkg_ensure!(
         idx < P.len(),
-        ChillDkgError::Runtime("Encryption failed: participant index out of range".into()),
+        CryptoError::Runtime("Encryption failed: participant index out of range".into()),
     );
     chill_dkg_ensure!(
         shares.len() == P.len(),
-        ChillDkgError::Runtime(
+        CryptoError::Runtime(
             "Encryption failed: number of shares must match number of encryption keys".into()
         ),
     );
@@ -157,7 +157,7 @@ pub fn decrypt(
 ) -> Result<SecretScalar> {
     chill_dkg_ensure!(
         idx < R.len(),
-        ChillDkgError::Runtime("Encryption failed: participant index out of range".into()),
+        CryptoError::Runtime("Encryption failed: participant index out of range".into()),
     );
 
     let mut aggr_pads = Zeroizing::new(Scalar::ZERO);

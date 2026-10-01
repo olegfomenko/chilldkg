@@ -157,7 +157,7 @@ fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<Recovery
 
     let transcript = CertEQTranscript::try_from((&bytes[..transcript_len], n)).map_err(|err| {
         ChillDkgError::RecoveryData(match err {
-            ChillDkgError::InvalidHostPubkey { .. } => {
+            chilldkg_rs::crypto::errors::CryptoError::InvalidPubkey { .. } => {
                 "Invalid session parameters in recovery data".into()
             }
             _ => "Failed to deserialize recovery data".into(),

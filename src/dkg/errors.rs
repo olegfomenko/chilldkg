@@ -1,15 +1,6 @@
-use std::array::TryFromSliceError;
+use crate::crypto::errors::CryptoError;
 use std::borrow::Cow;
 use thiserror::Error;
-
-#[macro_export]
-macro_rules! chill_dkg_ensure {
-    ($cond:expr, $err:expr $(,)?) => {
-        if !$cond {
-            return Err($err.into());
-        }
-    };
-}
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ChillDkgError {
@@ -81,8 +72,25 @@ pub enum ChillDkgError {
 
 pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
-impl From<TryFromSliceError> for ChillDkgError {
-    fn from(e: TryFromSliceError) -> Self {
-        ChillDkgError::Runtime(format!("{:?}", e).into())
+/// Attributes crypto failures the way the reference does: a key that fails
+/// to decode belongs to a participant, a malformed certificate comes from the
+/// coordinator, and a bad certificate signature is either the participant's
+/// or the coordinator's fault. `Value` and `Runtime` keep their class.
+impl From<CryptoError> for ChillDkgError {
+    fn from(e: CryptoError) -> Self {
+        match e {
+            CryptoError::Value(message) => ChillDkgError::Value(message),
+            CryptoError::InvalidPubkey { index } => {
+                ChillDkgError::InvalidHostPubkey { participant: index }
+            }
+            CryptoError::InvalidCertificate(message) => ChillDkgError::FaultyCoordinator(message),
+            CryptoError::InvalidCertificateSignature { index, message } => {
+                ChillDkgError::FaultyParticipantOrCoordinator {
+                    participant: index,
+                    message,
+                }
+            }
+            CryptoError::Runtime(message) => ChillDkgError::Runtime(message),
+        }
     }
 }
