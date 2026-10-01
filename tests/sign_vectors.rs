@@ -1,11 +1,9 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_hex_array, parse_point_hex, parse_pubnonce_hex, parse_scalar_hex};
-use chilldkg_rs::crypto::ec::compress_point_bip340;
-use chilldkg_rs::crypto::schnorr::bip340_challenge;
 use chilldkg_rs::crypto::tweak::TweakContext;
 use chilldkg_rs::dkg::msg::CoordinatorDKGOutput;
-use chilldkg_rs::sign::coordinator::verify::signing_nonce;
+use chilldkg_rs::sign::coordinator::verify::{challenge, signing_nonce};
 use chilldkg_rs::sign::errors::SignError::Value;
 use chilldkg_rs::sign::{
     PartialSignature, PubNonce, SecNonce, SignerState, SignerStep1State, Tweak, aggr_pubnonces,
@@ -58,8 +56,9 @@ fn verify_one(
         aggr_pubnonces(pubnonces.iter().map(|(_, n)| n)),
         &tweak_ctx,
         msg,
-    );
-    let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg).unwrap();
+    )
+    .unwrap();
+    let e = challenge(&R, &tweak_ctx, msg).unwrap();
     let (_, pubnonce) = pubnonces.iter().find(|(i, _)| *i == id).unwrap();
     partial_verify(
         psig,

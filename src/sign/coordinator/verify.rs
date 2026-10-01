@@ -10,7 +10,9 @@ use crate::crypto::ec::{
     reduce_scalar_from_bytes,
 };
 use crate::crypto::lagrange::{interpolate_pubkey, lagrange};
-use crate::crypto::schnorr::{SCHNORR_SIG_BYTES_SIZE, SchnorrSignature, SchnorrVerifier};
+use crate::crypto::schnorr::{
+    SCHNORR_SIG_BYTES_SIZE, SchnorrSignature, SchnorrVerifier, bip340_challenge,
+};
 use crate::crypto::tagged_hash;
 use crate::crypto::tags::TAG_FROST_NONCECOEF;
 use crate::crypto::tweak::{Tweak, TweakContext};
@@ -113,13 +115,14 @@ pub fn verify(
 /// Math: `b = H_noncecoef(ser_ids || aggnonce || Q_x || msg)` where ser_ids is
 /// the sorted ids as 4-byte big-endian integers (a set, per ROAST) and aggnonce
 /// is `R_1 || R_2` compressed with the identity as 33 zero bytes;
-/// `R = R_1 + b * R_2`, or `G` if that is the identity.
+/// `R = R_1 + b * R_2`, or `G` if that is the identity. Fails if `b` is zero, which
+/// cannot occur except with negligible probability (the reference asserts it).
 pub fn signing_nonce(
     ids: &[usize],
     aggnonce: (ProjectivePoint, ProjectivePoint),
     tweak_ctx: &TweakContext,
     msg: &[u8],
-) -> (Scalar, ProjectivePoint) {
+) -> Result<(Scalar, ProjectivePoint)> {
     let mut sorted_ids = ids.to_vec();
     sorted_ids.sort_unstable();
     let ser_ids: Vec<u8> = sorted_ids
@@ -140,6 +143,11 @@ pub fn signing_nonce(
         .concat(),
     ));
 
+    chill_dkg_ensure!(
+        !bool::from(b.is_zero()),
+        SignError::Runtime("nonce coefficient is zero".into()),
+    );
+
     let R_ = R1 + R2 * b;
     let R = if bool::from(R_.is_identity()) {
         ProjectivePoint::GENERATOR
@@ -147,7 +155,21 @@ pub fn signing_nonce(
         R_
     };
 
-    (b, R)
+    Ok((b, R))
+}
+
+/// The session's BIP340 challenge.
+///
+/// Math: `e = H_challenge(R_x || Q_x || msg)`. Fails if `e` is zero, which
+/// cannot occur except with negligible probability (the reference asserts it).
+pub fn challenge(R: &ProjectivePoint, tweak_ctx: &TweakContext, msg: &[u8]) -> Result<Scalar> {
+    let e = bip340_challenge(&compress_point_bip340(R), &tweak_ctx.xonly_pubkey(), msg)?;
+    chill_dkg_ensure!(
+        !bool::from(e.is_zero()),
+        SignError::Runtime("challenge is zero".into()),
+    );
+
+    Ok(e)
 }
 
 /// Math: `s_i * G == R_i' + (e * a_i * g * gacc) * Y_i`, where
@@ -229,7 +251,6 @@ pub fn aggr_pubnonces<'a>(
 mod tests {
     use super::*;
     use crate::crypto::ec::{decompress_default, parse_scalar_from_bytes};
-    use crate::crypto::schnorr::bip340_challenge;
 
     fn point(hex: &str) -> ProjectivePoint {
         decompress_default(&hex::decode(hex).unwrap().try_into().unwrap()).unwrap()
@@ -326,9 +347,9 @@ mod tests {
                 (point(&aggnonce[..66]), point(&aggnonce[66..])),
                 &tweak_ctx,
                 &msg,
-            );
-            let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), &msg)
-                .unwrap();
+            )
+            .unwrap();
+            let e = challenge(&R, &tweak_ctx, &msg).unwrap();
 
             let sig = combine(psigs.iter(), &tweak_ctx, &R, e);
             assert_eq!(hex::encode_upper(sig), expected);

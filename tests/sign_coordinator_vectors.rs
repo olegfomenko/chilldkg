@@ -276,6 +276,42 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
             ],
             Value("invalid list of signer ids".into()),
         ),
+        // More partial signatures than signers (not a reference vector: the
+        // reference rejects the list by length)
+        (
+            vec![0, 1],
+            vec![
+                (
+                    0,
+                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                ),
+                (
+                    0,
+                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                ),
+                (
+                    1,
+                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                ),
+            ],
+            Value("invalid number of signatures".into()),
+        ),
+        // Two partial signatures under the same id, one signer missing (not a
+        // reference vector)
+        (
+            vec![0, 1],
+            vec![
+                (
+                    0,
+                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                ),
+                (
+                    0,
+                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                ),
+            ],
+            Value("invalid list of signer ids".into()),
+        ),
         // Negated partial signature fails the verification equation
         (
             vec![0, 1],

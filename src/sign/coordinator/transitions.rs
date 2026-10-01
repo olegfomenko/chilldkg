@@ -1,11 +1,10 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::crypto::ec::compress_point_bip340;
-use crate::crypto::schnorr::{SchnorrSignature, bip340_challenge};
+use crate::crypto::schnorr::SchnorrSignature;
 use crate::crypto::tweak::{Tweak, TweakContext};
 use crate::sign::coordinator::verify::{
-    aggr_pubnonces, combine, signing_nonce, validate_signers, verify,
+    aggr_pubnonces, challenge, combine, signing_nonce, validate_signers, verify,
 };
 use crate::sign::coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
 use crate::sign::errors::{Result, SignError};
@@ -61,7 +60,17 @@ impl CoordinatorState for CoordinatorStep1State {
     /// them and checks the result verifies under the tweaked threshold key.
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         let (psigs, msg, tweaks) = msg;
+
+        // Collecting into a map would silently keep the last of two entries
+        // for the same id; the reference rejects such a list by length.
+        chill_dkg_ensure!(
+            psigs.len() == self.pubnonces.len(),
+            SignError::Value("invalid number of signatures".into()),
+        );
+
         let psigs: BTreeMap<usize, PartialSignature> = psigs.into_iter().collect();
+
+        // Check that ids are equal
         chill_dkg_ensure!(
             self.pubnonces.keys().eq(psigs.keys()),
             SignError::Value("invalid list of signer ids".into())
@@ -82,8 +91,9 @@ impl CoordinatorState for CoordinatorStep1State {
             aggr_pubnonces(input.values().map(|(pubnonce, _)| pubnonce)),
             &tweak_ctx,
             &msg,
-        );
-        let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), &msg)?;
+        )?;
+
+        let e = challenge(&R, &tweak_ctx, &msg)?;
 
         for (id, (pubnonce, psig)) in &input {
             partial_verify(

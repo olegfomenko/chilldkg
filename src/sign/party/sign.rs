@@ -4,11 +4,11 @@
 //! [`coordinator::verify`](crate::sign::coordinator::verify).
 
 use crate::chill_dkg_ensure;
-use crate::crypto::ec::compress_point_bip340;
 use crate::crypto::lagrange::lagrange;
-use crate::crypto::schnorr::bip340_challenge;
 use crate::crypto::tweak::{Tweak, TweakContext};
-use crate::sign::coordinator::verify::{aggr_pubnonces, signing_nonce, validate_signers};
+use crate::sign::coordinator::verify::{
+    aggr_pubnonces, challenge, signing_nonce, validate_signers,
+};
 use crate::sign::errors::{Result, SignError};
 use crate::sign::msg::{PartialSignature, PubNonce};
 use crate::sign::partial_verify;
@@ -65,8 +65,9 @@ pub fn partial_sign(
         aggr_pubnonces(pubnonces.iter().map(|(_, pubnonce)| pubnonce)),
         &tweak_ctx,
         msg,
-    );
-    let e = bip340_challenge(&compress_point_bip340(&R), &tweak_ctx.xonly_pubkey(), msg)?;
+    )?;
+
+    let e = challenge(&R, &tweak_ctx, msg)?;
 
     // Fails if idx is not among the signers (so idx < n from here on).
     let a = lagrange(&ids, idx)?;
