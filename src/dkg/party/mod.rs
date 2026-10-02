@@ -2,9 +2,9 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{CoordinatorMsg1, DKGOutput, RecoveryData};
-use crate::party::recovery::recover;
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{CoordinatorMsg1, DKGOutput, RecoveryData};
+use crate::dkg::party::recovery::recover;
 use k256::elliptic_curve::Group;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
 use rand_core::CryptoRngCore;

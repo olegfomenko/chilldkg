@@ -7,7 +7,7 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::errors::{ChillDkgError, Result};
+use crate::crypto::errors::{CryptoError, Result};
 use itertools::Itertools;
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
@@ -22,14 +22,14 @@ use k256::{ProjectivePoint, Scalar};
 pub fn lagrange(ids: &[usize], my_id: usize) -> Result<Scalar> {
     chill_dkg_ensure!(
         ids.contains(&my_id),
-        ChillDkgError::Value(
+        CryptoError::Value(
             "The signer's id must be present in the participant identifier list.".into()
         ),
     );
 
     chill_dkg_ensure!(
         ids.iter().all_unique(),
-        ChillDkgError::Value("The participant identifier list contains duplicate elements.".into()),
+        CryptoError::Value("The participant identifier list contains duplicate elements.".into()),
     );
 
     lagrange_internal(ids, my_id)
@@ -53,7 +53,7 @@ fn lagrange_internal(ids: &[usize], my_id: usize) -> Result<Scalar> {
     // `deno` is a product of non-zero differences of distinct ids, so it is
     // invertible; the check above makes this unreachable.
     let deno_inv = Option::<Scalar>::from(deno.invert())
-        .ok_or_else(|| ChillDkgError::Runtime("Lagrange denominator is zero".into()))?;
+        .ok_or_else(|| CryptoError::Runtime("Lagrange denominator is zero".into()))?;
 
     Ok(num * deno_inv)
 }
@@ -65,12 +65,12 @@ fn lagrange_internal(ids: &[usize], my_id: usize) -> Result<Scalar> {
 pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Result<ProjectivePoint> {
     chill_dkg_ensure!(
         ids.len() == pubshares.len(),
-        ChillDkgError::Value("The pubshares and ids arrays must have the same length.".into()),
+        CryptoError::Value("The pubshares and ids arrays must have the same length.".into()),
     );
 
     chill_dkg_ensure!(
         ids.iter().all_unique(),
-        ChillDkgError::Value("The participant identifier list contains duplicate elements.".into()),
+        CryptoError::Value("The participant identifier list contains duplicate elements.".into()),
     );
 
     let Q = pubshares
@@ -82,7 +82,7 @@ pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Resul
     // Q is not the point at infinity except with negligible probability.
     chill_dkg_ensure!(
         !bool::from(Q.is_identity()),
-        ChillDkgError::Runtime("interpolated public key is the identity point".into()),
+        CryptoError::Runtime("interpolated public key is the identity point".into()),
     );
 
     Ok(Q)

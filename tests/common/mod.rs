@@ -2,9 +2,9 @@
 
 use chilldkg_rs::crypto::ec::{CompressedPubKey, decompress_default};
 use chilldkg_rs::crypto::ec::{EC_SCALAR_BYTES_SIZE, parse_scalar_from_bytes};
+use chilldkg_rs::crypto::errors::{CryptoError, Result};
 use chilldkg_rs::crypto::schnorr::SCHNORR_SIG_BYTES_SIZE;
-use chilldkg_rs::errors::{ChillDkgError, Result};
-use chilldkg_rs::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
+use chilldkg_rs::dkg::msg::{CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, RecoveryData};
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
@@ -12,7 +12,7 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
     let bytes = decode(hex)?;
     let fixed_len = 33 * t + 64 + 33;
     if bytes.len() < fixed_len || !(bytes.len() - fixed_len).is_multiple_of(32) {
-        return Err(ChillDkgError::Runtime("invalid pmsg1 length".into()));
+        return Err(CryptoError::Runtime("invalid pmsg1 length".into()));
     }
 
     let mut offset = 0;
@@ -23,7 +23,7 @@ pub fn parse_participant_msg1(hex: &str, t: usize, n: usize) -> Result<Participa
     let pubnonce = parse_point(take(&bytes, &mut offset))?;
     let enc_share_count = (bytes.len() - offset) / 32;
     if enc_share_count > n {
-        return Err(ChillDkgError::Runtime("invalid pmsg1 length".into()));
+        return Err(CryptoError::Runtime("invalid pmsg1 length".into()));
     }
     let enc_shares = (0..enc_share_count)
         .map(|_| parse_scalar_from_bytes(take::<EC_SCALAR_BYTES_SIZE>(&bytes, &mut offset)))
@@ -47,7 +47,7 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
         || bytes.len() - 33 * n - 33 * (t - 1) - 64 * n < 33 * n
         || bytes.len() - 33 * n - 33 * (t - 1) - 64 * n - 33 * n < 32 * n
     {
-        return Err(ChillDkgError::Runtime("invalid cmsg1 length".into()));
+        return Err(CryptoError::Runtime("invalid cmsg1 length".into()));
     }
 
     let coms_to_secrets = (0..n)
@@ -63,9 +63,7 @@ pub fn parse_coordinator_msg1(hex: &str, t: usize, n: usize) -> Result<Coordinat
         .collect::<Result<Vec<_>>>()?;
 
     if offset != bytes.len() {
-        return Err(ChillDkgError::Runtime(
-            "incorrect input bytes length".into(),
-        ));
+        return Err(CryptoError::Runtime("incorrect input bytes length".into()));
     }
 
     Ok(CoordinatorMsg1 {
@@ -105,18 +103,18 @@ pub fn parse_point_hex(hex: &str) -> Result<ProjectivePoint> {
 pub fn parse_hex_array<const N: usize>(hex: &str) -> Result<[u8; N]> {
     decode(hex)?
         .try_into()
-        .map_err(|_| ChillDkgError::Runtime("invalid hex length".into()))
+        .map_err(|_| CryptoError::Runtime("invalid hex length".into()))
 }
 
 fn decode(hex: &str) -> Result<Vec<u8>> {
-    hex::decode(hex).map_err(|err| ChillDkgError::Runtime(err.to_string().into()))
+    hex::decode(hex).map_err(|err| CryptoError::Runtime(err.to_string().into()))
 }
 
 pub fn parse_point(bytes: CompressedPubKey) -> Result<ProjectivePoint> {
     let point = decompress_default(&bytes)
-        .ok_or_else(|| ChillDkgError::Runtime("invalid compressed point".into()))?;
+        .ok_or_else(|| CryptoError::Runtime("invalid compressed point".into()))?;
     if bool::from(point.is_identity()) {
-        Err(ChillDkgError::Runtime("point is identity".into()))
+        Err(CryptoError::Runtime("point is identity".into()))
     } else {
         Ok(point)
     }

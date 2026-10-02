@@ -1,9 +1,9 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
+use crate::crypto::errors::{CryptoError, Result};
 use crate::crypto::tags::TAG_TAP_TWEAK;
 use crate::crypto::{SecretScalar, tagged_hash};
-use crate::errors::{ChillDkgError, Result};
 use k256::elliptic_curve::ops::{LinearCombinationExt, Reduce};
 use k256::elliptic_curve::point::AffineCoordinates;
 use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
@@ -25,7 +25,7 @@ pub type ScalarBytes = [u8; EC_SCALAR_BYTES_SIZE];
 /// Note: It does not reduce by field modulus.
 pub fn parse_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Result<Scalar> {
     let res = Option::<Scalar>::from(Scalar::from_repr(x.into())).ok_or_else(|| {
-        ChillDkgError::Runtime("failed to convert 32 byte array into field element".into())
+        CryptoError::Runtime("failed to convert 32 byte array into field element".into())
     })?;
 
     Ok(res)
@@ -44,7 +44,7 @@ pub fn reduce_scalar_from_bytes(x: [u8; EC_SCALAR_BYTES_SIZE]) -> Scalar {
 /// TODO: Unfortunately, i haven't found a way to get rid of passing x by value to Scalar::from_repr
 pub fn parse_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>) -> Result<Scalar> {
     let res = Option::<Scalar>::from(Scalar::from_repr((*x).into())).ok_or_else(|| {
-        ChillDkgError::Runtime("failed to convert 32 byte array into field element".into())
+        CryptoError::Runtime("failed to convert 32 byte array into field element".into())
     })?;
 
     Ok(res)
@@ -59,7 +59,7 @@ pub fn reduce_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>)
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     chill_dkg_ensure!(
         !bool::from(p.is_identity()),
-        ChillDkgError::Runtime("cannot tap tweak identity point".into()),
+        CryptoError::Runtime("cannot tap tweak identity point".into()),
     );
 
     let tweak = parse_scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;

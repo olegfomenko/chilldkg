@@ -1,13 +1,13 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_point_hex, parse_scalar_hex};
-use chilldkg_rs::coordinator::recovery::recover as recover_coordinator;
 use chilldkg_rs::crypto::certeq::CertEQTranscript;
 use chilldkg_rs::crypto::ec::{COMPRESSED_POINT_BYTES_SIZE, EC_SCALAR_BYTES_SIZE};
 use chilldkg_rs::crypto::schnorr::SCHNORR_SIG_BYTES_SIZE;
-use chilldkg_rs::errors::{ChillDkgError, Result};
-use chilldkg_rs::msg::RecoveryData;
-use chilldkg_rs::party::recovery::recover as recover_participant;
+use chilldkg_rs::dkg::coordinator::recovery::recover as recover_coordinator;
+use chilldkg_rs::dkg::errors::{ChillDkgError, Result};
+use chilldkg_rs::dkg::msg::RecoveryData;
+use chilldkg_rs::dkg::party::recovery::recover as recover_participant;
 
 pub mod common;
 
@@ -157,7 +157,7 @@ fn split_recovery_data(hex: &str, threshold: usize, n: usize) -> Result<Recovery
 
     let transcript = CertEQTranscript::try_from((&bytes[..transcript_len], n)).map_err(|err| {
         ChillDkgError::RecoveryData(match err {
-            ChillDkgError::InvalidHostPubkey { .. } => {
+            chilldkg_rs::crypto::errors::CryptoError::InvalidPubkey { .. } => {
                 "Invalid session parameters in recovery data".into()
             }
             _ => "Failed to deserialize recovery data".into(),

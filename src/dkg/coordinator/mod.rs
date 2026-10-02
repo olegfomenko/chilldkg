@@ -1,10 +1,10 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::coordinator::recovery::recover;
 use crate::crypto::certeq::CertEQTranscript;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{CoordinatorDKGOutput, ParticipantMsg1, RecoveryData};
+use crate::dkg::coordinator::recovery::recover;
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{CoordinatorDKGOutput, ParticipantMsg1, RecoveryData};
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
