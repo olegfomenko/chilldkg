@@ -98,40 +98,7 @@ impl Signer {
         &mut self,
         msg: <SignerInitialState as SignerState>::Message,
     ) -> Result<(usize, PubNonce)> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (next, pubnonce) = Self::step1_inner(
-            std::mem::replace(&mut self.state, SignerStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = SignerStateValue::Failed(e.clone());
-        })?;
-
-        self.state = next;
-
-        Ok(pubnonce)
-    }
-
-    fn step1_inner(
-        state: SignerStateValue,
-        msg: <SignerInitialState as SignerState>::Message,
-    ) -> Result<(SignerStateValue, (usize, PubNonce))> {
-        match state {
-            SignerStateValue::Initial(state) => {
-                let (next, pubnonce) = state.next(msg)?;
-
-                let next_state = SignerStateValue::Step1(next.ok_or_else(|| {
-                    SignError::Runtime("invalid next state after applying message".into())
-                })?);
-
-                Ok((next_state, pubnonce))
-            }
-            _ => Err(SignError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
-        }
+        self.transition::<SignerInitialState>(msg)
     }
 
     /// Completes the session for this signer.
@@ -145,34 +112,27 @@ impl Signer {
         &mut self,
         msg: <SignerStep1State as SignerState>::Message,
     ) -> Result<(usize, PartialSignature)> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let psig = Self::finalize_inner(
-            std::mem::replace(&mut self.state, SignerStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = SignerStateValue::Failed(e.clone());
-        })?;
-
-        self.state = SignerStateValue::Successful;
-
-        Ok(psig)
+        self.transition::<SignerStep1State>(msg)
     }
 
-    fn finalize_inner(
-        state: SignerStateValue,
-        msg: <SignerStep1State as SignerState>::Message,
-    ) -> Result<(usize, PartialSignature)> {
-        match state {
-            SignerStateValue::Step1(state) => {
-                let (_, psig) = state.next(msg)?;
-                Ok(psig)
+    fn transition<S>(&mut self, msg: S::Message) -> Result<S::Output>
+    where
+        S: SignerState + TryFrom<SignerStateValue, Error = SignError>,
+        SignerStateValue: From<S::Next>,
+    {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+        let state = std::mem::replace(&mut self.state, SignerStateValue::Replaced);
+
+        match S::try_from(state).and_then(|s| s.next(msg)) {
+            Ok((next, output)) => {
+                self.state = next.map_or(SignerStateValue::Successful, Into::into);
+                Ok(output)
             }
-            _ => Err(SignError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            Err(e) => {
+                self.state = SignerStateValue::Failed(e.clone());
+                Err(e)
+            }
         }
     }
 
@@ -255,40 +215,7 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,
     ) -> Result<Vec<(usize, PubNonce)>> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (next, pubnonces) = Self::step1_inner(
-            std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = CoordinatorStateValue::Failed(e.clone());
-        })?;
-
-        self.state = next;
-
-        Ok(pubnonces)
-    }
-
-    fn step1_inner(
-        state: CoordinatorStateValue,
-        msg: <CoordinatorInitialState as CoordinatorState>::Message,
-    ) -> Result<(CoordinatorStateValue, Vec<(usize, PubNonce)>)> {
-        match state {
-            CoordinatorStateValue::Initial(state) => {
-                let (next, pubnonces) = state.next(msg)?;
-
-                let next_state = CoordinatorStateValue::Step1(next.ok_or_else(|| {
-                    SignError::Runtime("invalid next state after applying message".into())
-                })?);
-
-                Ok((next_state, pubnonces))
-            }
-            _ => Err(SignError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
-        }
+        self.transition::<CoordinatorInitialState>(msg)
     }
 
     /// Completes the session on the coordinator side.
@@ -303,34 +230,27 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorStep1State as CoordinatorState>::Message,
     ) -> Result<SchnorrSignature> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let sig = Self::step2_inner(
-            std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = CoordinatorStateValue::Failed(e.clone());
-        })?;
-
-        self.state = CoordinatorStateValue::Successful;
-
-        Ok(sig)
+        self.transition::<CoordinatorStep1State>(msg)
     }
 
-    fn step2_inner(
-        state: CoordinatorStateValue,
-        msg: <CoordinatorStep1State as CoordinatorState>::Message,
-    ) -> Result<SchnorrSignature> {
-        match state {
-            CoordinatorStateValue::Step1(state) => {
-                let (_, sig) = state.next(msg)?;
-                Ok(sig)
+    fn transition<S>(&mut self, msg: S::Message) -> Result<S::Output>
+    where
+        S: CoordinatorState + TryFrom<CoordinatorStateValue, Error = SignError>,
+        CoordinatorStateValue: From<S::Next>,
+    {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+        let state = std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced);
+
+        match S::try_from(state).and_then(|s| s.next(msg)) {
+            Ok((next, output)) => {
+                self.state = next.map_or(CoordinatorStateValue::Successful, Into::into);
+                Ok(output)
             }
-            _ => Err(SignError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            Err(e) => {
+                self.state = CoordinatorStateValue::Failed(e.clone());
+                Err(e)
+            }
         }
     }
 
@@ -373,5 +293,78 @@ impl Coordinator {
         }
 
         Ok(())
+    }
+}
+
+// State conversions used by the drivers' `transition`.
+impl TryFrom<SignerStateValue> for SignerInitialState {
+    type Error = SignError;
+    fn try_from(v: SignerStateValue) -> Result<Self> {
+        match v {
+            SignerStateValue::Initial(s) => Ok(s),
+            _ => Err(SignError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<SignerStateValue> for SignerStep1State {
+    type Error = SignError;
+    fn try_from(v: SignerStateValue) -> Result<Self> {
+        match v {
+            SignerStateValue::Step1(s) => Ok(s),
+            _ => Err(SignError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl From<SignerInitialState> for SignerStateValue {
+    fn from(s: SignerInitialState) -> Self {
+        SignerStateValue::Initial(s)
+    }
+}
+
+impl From<SignerStep1State> for SignerStateValue {
+    fn from(s: SignerStep1State) -> Self {
+        SignerStateValue::Step1(s)
+    }
+}
+
+impl TryFrom<CoordinatorStateValue> for CoordinatorInitialState {
+    type Error = SignError;
+    fn try_from(v: CoordinatorStateValue) -> Result<Self> {
+        match v {
+            CoordinatorStateValue::Initial(s) => Ok(s),
+            _ => Err(SignError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<CoordinatorStateValue> for CoordinatorStep1State {
+    type Error = SignError;
+    fn try_from(v: CoordinatorStateValue) -> Result<Self> {
+        match v {
+            CoordinatorStateValue::Step1(s) => Ok(s),
+            _ => Err(SignError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl From<CoordinatorInitialState> for CoordinatorStateValue {
+    fn from(s: CoordinatorInitialState) -> Self {
+        CoordinatorStateValue::Initial(s)
+    }
+}
+
+impl From<CoordinatorStep1State> for CoordinatorStateValue {
+    fn from(s: CoordinatorStep1State) -> Self {
+        CoordinatorStateValue::Step1(s)
     }
 }

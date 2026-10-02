@@ -133,40 +133,7 @@ impl Participant {
         &mut self,
         msg: <ParticipantInitialState as ParticipantState>::Message,
     ) -> Result<ParticipantMsg1> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (next, pmsg1) = Self::step1_inner(
-            std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = ParticipantStateValue::Failed(e.clone());
-        })?;
-
-        self.state = next;
-
-        Ok(pmsg1)
-    }
-
-    fn step1_inner(
-        state: ParticipantStateValue,
-        msg: <ParticipantInitialState as ParticipantState>::Message,
-    ) -> Result<(ParticipantStateValue, ParticipantMsg1)> {
-        match state {
-            ParticipantStateValue::Initial(state) => {
-                let (next, pmsg1) = state.next(msg)?;
-
-                let next_state = ParticipantStateValue::Step1(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
-
-                Ok((next_state, pmsg1))
-            }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
-        }
+        self.transition::<ParticipantInitialState>(msg)
     }
 
     /// Runs the participant's second round.
@@ -179,40 +146,7 @@ impl Participant {
         &mut self,
         msg: <ParticipantStep1State as ParticipantState>::Message,
     ) -> Result<ParticipantMsg2> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (next, pmsg2) = Self::step2_inner(
-            std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = ParticipantStateValue::Failed(e.clone());
-        })?;
-
-        self.state = next;
-
-        Ok(pmsg2)
-    }
-
-    fn step2_inner(
-        state: ParticipantStateValue,
-        msg: <ParticipantStep1State as ParticipantState>::Message,
-    ) -> Result<(ParticipantStateValue, ParticipantMsg2)> {
-        match state {
-            ParticipantStateValue::Step1(state) => {
-                let (next, pmsg1) = state.next(msg)?;
-
-                let next_state = ParticipantStateValue::Step2(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
-
-                Ok((next_state, pmsg1))
-            }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
-        }
+        self.transition::<ParticipantStep1State>(msg)
     }
 
     /// Completes the session for this participant.
@@ -228,34 +162,27 @@ impl Participant {
         &mut self,
         msg: <ParticipantStep2State as ParticipantState>::Message,
     ) -> Result<(DKGOutput, RecoveryData)> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (out, recovery_data) = Self::finalize_inner(
-            std::mem::replace(&mut self.state, ParticipantStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = ParticipantStateValue::Failed(e.clone());
-        })?;
-
-        self.state = ParticipantStateValue::Successful;
-
-        Ok((out, recovery_data))
+        self.transition::<ParticipantStep2State>(msg)
     }
 
-    fn finalize_inner(
-        state: ParticipantStateValue,
-        msg: <ParticipantStep2State as ParticipantState>::Message,
-    ) -> Result<(DKGOutput, RecoveryData)> {
-        match state {
-            ParticipantStateValue::Step2(state) => {
-                let (_, res) = state.next(msg)?;
-                Ok(res)
+    fn transition<S>(&mut self, msg: S::Message) -> Result<S::Output>
+    where
+        S: ParticipantState + TryFrom<ParticipantStateValue, Error = ChillDkgError>,
+        ParticipantStateValue: From<S::Next>,
+    {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+        let state = std::mem::replace(&mut self.state, ParticipantStateValue::Replaced);
+
+        match S::try_from(state).and_then(|s| s.next(msg)) {
+            Ok((next, output)) => {
+                self.state = next.map_or(ParticipantStateValue::Successful, Into::into);
+                Ok(output)
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            Err(e) => {
+                self.state = ParticipantStateValue::Failed(e.clone());
+                Err(e)
+            }
         }
     }
 
@@ -356,40 +283,9 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,
     ) -> Result<CoordinatorMsg1> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-        let (next, cmsg1) = Self::step1_inner(
-            std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = CoordinatorStateValue::Failed(e.clone());
-        })?;
-
-        self.state = next;
-
-        Ok(cmsg1)
+        self.transition::<CoordinatorInitialState>(msg)
     }
 
-    fn step1_inner(
-        state: CoordinatorStateValue,
-        msg: <CoordinatorInitialState as CoordinatorState>::Message,
-    ) -> Result<(CoordinatorStateValue, CoordinatorMsg1)> {
-        match state {
-            CoordinatorStateValue::Initial(state) => {
-                let (next, cmsg1) = state.next(msg)?;
-
-                let next_state = CoordinatorStateValue::Step1(next.ok_or_else(|| {
-                    ChillDkgError::Runtime("invalid next state after applying message".into())
-                })?);
-
-                Ok((next_state, cmsg1))
-            }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
-        }
-    }
     /// Completes the session on the coordinator side.
     ///
     /// Aggregates the participants' [`ParticipantMsg2`]
@@ -403,34 +299,27 @@ impl Coordinator {
         &mut self,
         msg: <CoordinatorStep1State as CoordinatorState>::Message,
     ) -> Result<(CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData)> {
-        // Call on the terminal state shouldn't change it
-        self.only_active()?;
-
-        let (cmsg2, out, recovery_data) = Self::step2_inner(
-            std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced),
-            msg,
-        )
-        .inspect_err(|e| {
-            self.state = CoordinatorStateValue::Failed(e.clone());
-        })?;
-
-        self.state = CoordinatorStateValue::Successful;
-
-        Ok((cmsg2, out, recovery_data))
+        self.transition::<CoordinatorStep1State>(msg)
     }
 
-    fn step2_inner(
-        state: CoordinatorStateValue,
-        msg: <CoordinatorStep1State as CoordinatorState>::Message,
-    ) -> Result<(CoordinatorMsg2, CoordinatorDKGOutput, RecoveryData)> {
-        match state {
-            CoordinatorStateValue::Step1(state) => {
-                let (_, res) = state.next(msg)?;
-                Ok(res)
+    fn transition<S>(&mut self, msg: S::Message) -> Result<S::Output>
+    where
+        S: CoordinatorState + TryFrom<CoordinatorStateValue, Error = ChillDkgError>,
+        CoordinatorStateValue: From<S::Next>,
+    {
+        // Call on the terminal state shouldn't change it
+        self.only_active()?;
+        let state = std::mem::replace(&mut self.state, CoordinatorStateValue::Replaced);
+
+        match S::try_from(state).and_then(|s| s.next(msg)) {
+            Ok((next, output)) => {
+                self.state = next.map_or(CoordinatorStateValue::Successful, Into::into);
+                Ok(output)
             }
-            _ => Err(ChillDkgError::Runtime(
-                "can not apply message to the given state".into(),
-            )),
+            Err(e) => {
+                self.state = CoordinatorStateValue::Failed(e.clone());
+                Err(e)
+            }
         }
     }
 
@@ -473,5 +362,96 @@ impl Coordinator {
         }
 
         Ok(())
+    }
+}
+
+// State conversions used by the drivers' `transition`.
+impl TryFrom<ParticipantStateValue> for ParticipantInitialState {
+    type Error = ChillDkgError;
+    fn try_from(v: ParticipantStateValue) -> Result<Self> {
+        match v {
+            ParticipantStateValue::Initial(s) => Ok(s),
+            _ => Err(ChillDkgError::Runtime(
+                "expected another state than given".into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<ParticipantStateValue> for ParticipantStep1State {
+    type Error = ChillDkgError;
+    fn try_from(v: ParticipantStateValue) -> Result<Self> {
+        match v {
+            ParticipantStateValue::Step1(s) => Ok(s),
+            _ => Err(ChillDkgError::Runtime(
+                "expected another state than given".into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<ParticipantStateValue> for ParticipantStep2State {
+    type Error = ChillDkgError;
+    fn try_from(v: ParticipantStateValue) -> Result<Self> {
+        match v {
+            ParticipantStateValue::Step2(s) => Ok(s),
+            _ => Err(ChillDkgError::Runtime(
+                "expected another state than given".into(),
+            )),
+        }
+    }
+}
+
+impl From<ParticipantInitialState> for ParticipantStateValue {
+    fn from(s: ParticipantInitialState) -> Self {
+        ParticipantStateValue::Initial(s)
+    }
+}
+
+impl From<ParticipantStep1State> for ParticipantStateValue {
+    fn from(s: ParticipantStep1State) -> Self {
+        ParticipantStateValue::Step1(s)
+    }
+}
+
+impl From<ParticipantStep2State> for ParticipantStateValue {
+    fn from(s: ParticipantStep2State) -> Self {
+        ParticipantStateValue::Step2(s)
+    }
+}
+
+impl TryFrom<CoordinatorStateValue> for CoordinatorInitialState {
+    type Error = ChillDkgError;
+    fn try_from(v: CoordinatorStateValue) -> Result<Self> {
+        match v {
+            CoordinatorStateValue::Initial(s) => Ok(s),
+            _ => Err(ChillDkgError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl TryFrom<CoordinatorStateValue> for CoordinatorStep1State {
+    type Error = ChillDkgError;
+    fn try_from(v: CoordinatorStateValue) -> Result<Self> {
+        match v {
+            CoordinatorStateValue::Step1(s) => Ok(s),
+            _ => Err(ChillDkgError::Runtime(
+                "expected another state then given".into(),
+            )),
+        }
+    }
+}
+
+impl From<CoordinatorInitialState> for CoordinatorStateValue {
+    fn from(s: CoordinatorInitialState) -> Self {
+        CoordinatorStateValue::Initial(s)
+    }
+}
+
+impl From<CoordinatorStep1State> for CoordinatorStateValue {
+    fn from(s: CoordinatorStep1State) -> Self {
+        CoordinatorStateValue::Step1(s)
     }
 }
