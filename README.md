@@ -341,13 +341,6 @@ Things every user should know:
 - **Nonce reuse.** Reusing a secret nonce leaks the secret share. The nonce lives only in
   the signer's round-1 state, which is consumed by round 2 and wiped on drop, so it can be
   used once, for one session. A failed round 2 drops it as well; start a new session.
-- **Faulty signers.** A nonce or partial signature that fails verification is reported as
-  `SignError::InvalidContribution { participant, .. }`, so the coordinator can exclude that
-  signer and start a new session with another subset.
-- **Verification.** `sign::verify` checks a final signature under the tweaked threshold
-  key, and `sign::signing_pubkey` returns that key for external BIP340 verifiers.
-  `sign::validate_signers` and `sign::partial_verify` are the lower-level checks the state
-  machines use.
 
 As for the DKG, the protocol is exposed at two levels:
 
