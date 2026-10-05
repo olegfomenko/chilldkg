@@ -95,7 +95,10 @@ pub struct ParticipantStep2State {
 }
 
 impl ParticipantInitialState {
-    fn validate_session_params(&self, host_pubkeys: &[ProjectivePoint], t: usize) -> Result<usize> {
+    pub fn validate_public_session_params(
+        host_pubkeys: &[ProjectivePoint],
+        t: usize,
+    ) -> Result<()> {
         chill_dkg_ensure!(
             t >= 1 && t <= host_pubkeys.len() && host_pubkeys.len() <= u32::MAX as usize,
             ChillDkgError::ThresholdOrCount,
@@ -117,6 +120,12 @@ impl ParticipantInitialState {
                 );
             }
         }
+
+        Ok(())
+    }
+
+    fn validate_session_params(&self, host_pubkeys: &[ProjectivePoint], t: usize) -> Result<usize> {
+        Self::validate_public_session_params(host_pubkeys, t)?;
 
         host_pubkeys
             .iter()
