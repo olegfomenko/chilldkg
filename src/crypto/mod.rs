@@ -1,10 +1,15 @@
 pub mod certeq;
 pub mod ec;
 pub mod enc;
+pub mod errors;
+#[cfg(feature = "signing")]
+pub mod lagrange;
 pub mod poly;
 pub mod pop;
 pub mod schnorr;
 pub mod tags;
+#[cfg(feature = "signing")]
+pub mod tweak;
 
 use k256::Scalar;
 use sha2::{Digest, Sha256};

@@ -1,14 +1,14 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::coordinator::{
+use crate::crypto::certeq::{CertEQTranscript, verify_certeq_certificate};
+use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
+use crate::crypto::errors::CryptoError;
+use crate::dkg::coordinator::{
     CoordinatorDKGOutput, CoordinatorInitialState, CoordinatorState, CoordinatorStep1State,
 };
-use crate::crypto::certeq::{CertEQTranscript, CertEQVerifier};
-use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
-use crate::crypto::schnorr::SchnorrVerifier;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{
     CoordinatorMsg1, CoordinatorMsg2, ParticipantMsg1, ParticipantMsg2, RecoveryData,
 };
 use k256::ProjectivePoint;
@@ -95,19 +95,15 @@ impl CoordinatorState for CoordinatorStep1State {
             cert: msgs.into_iter().map(|p_msg| p_msg.sig).collect(),
         };
 
-        for i in 0..self.host_pubkeys.len() {
-            if let Err(err) =
-                CertEQVerifier::new(self.host_pubkeys[i], &self.transcript, i).verify(msg.cert[i])
-            {
-                return Err(ChillDkgError::FaultyParticipant {
-                    participant: i,
-                    message: format!(
-                        "Participant has provided an invalid signature for the certificate, error = {:?}",
-                        err
-                    ).into(),
-                });
+        verify_certeq_certificate(&self.transcript, &msg.cert).map_err(|e| match e {
+            CryptoError::InvalidCertificateSignature { index, message } => {
+                ChillDkgError::FaultyParticipant {
+                    participant: index,
+                    message,
+                }
             }
-        }
+            other => other.into(),
+        })?;
 
         let recovery_data = RecoveryData {
             transcript: self.transcript,

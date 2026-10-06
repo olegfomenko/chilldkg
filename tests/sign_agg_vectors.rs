@@ -1,33 +1,34 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
-use crate::common::{
-    parse_aggnonce_hex, parse_hex_array, parse_point_hex, parse_scalar_hex, verify_bip340,
-};
-use chilldkg_rs::sign::{Tweak, Verifier};
+use crate::common::{parse_aggnonce_hex, parse_hex_array, parse_point_hex, parse_scalar_hex};
+use chilldkg_rs::crypto::tweak::TweakContext;
+use chilldkg_rs::sign::coordinator::verify::{challenge, combine, signing_nonce};
+use chilldkg_rs::sign::{PartialSignature, Tweak, verify};
 
 pub mod common;
 
+fn tweaks(tweaks: &[(&str, bool)]) -> Vec<Tweak> {
+    tweaks
+        .iter()
+        .map(|(hex, is_xonly)| Tweak {
+            value: parse_hex_array(hex).unwrap(),
+            is_xonly: *is_xonly,
+        })
+        .collect()
+}
+
+/// The `sig_agg` reference vectors: combining partial signatures given only
+/// the aggregate nonce (the reference `partial_sig_agg`).
 #[test]
-fn test_aggregate_passes() {
-    let verifier = Verifier {
-        t: 2,
-        thresh_pk: parse_point_hex(
-            "03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237",
-        )
-        .unwrap(),
-        pubshares: vec![
-            parse_point_hex("022B02109FBCFB4DA3F53C7393B22E72A2A51C4AFBF0C01AAF44F73843CFB4B74B")
-                .unwrap(),
-            parse_point_hex("02EC6444271D791A1DA95300329DB2268611B9C60E193DABFDEE0AA816AE512583")
-                .unwrap(),
-            parse_point_hex("03113F810F612567D9552F46AF9BDA21A67D52060F95BD4A723F4B60B1820D3676")
-                .unwrap(),
-        ],
-    };
+fn test_combine_passes() {
+    let threshold_pubkey =
+        parse_point_hex("03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237")
+            .unwrap();
     let msg =
         hex::decode("599C67EA410D005B9DA90817CF03ED3B1C868E4DA4EDF00A5880B0082C237869").unwrap();
 
-    for (ids, aggnonce, tweaks, psigs, expected) in [
+    // (ids, aggregate nonce as R1 || R2, tweaks, psigs, expected signature)
+    for (ids, aggnonce, tweaks_hex, psigs, expected) in [
         // Minimum threshold subset of signers (t=2 of n=3), no tweaks
         (
             vec![0, 1],
@@ -87,25 +88,26 @@ fn test_aggregate_passes() {
             "12FADDB3E8C8A8B95E6C36E5B33CB657A840A2EC1DDABCC19D05E99FD71F637583B9C6B051861A64586CE490B82C3BA2013420C0ED8740DB86E57BA138B89A90",
         ),
     ] {
-        let tweaks: Vec<Tweak> = tweaks
+        let tweaks = tweaks(&tweaks_hex);
+        let psigs: Vec<PartialSignature> = psigs
             .iter()
-            .map(|(hex, is_xonly)| Tweak {
-                value: parse_hex_array(hex).unwrap(),
-                is_xonly: *is_xonly,
-            })
+            .map(|hex| parse_scalar_hex(hex).unwrap())
             .collect();
-        let psigs: Vec<_> = psigs.iter().map(|h| parse_scalar_hex(h).unwrap()).collect();
 
-        let sig = verifier
-            .aggregate(
-                &ids,
-                &psigs,
-                parse_aggnonce_hex(aggnonce).unwrap(),
-                &msg,
-                &tweaks,
-            )
+        let tweak_ctx = TweakContext::new(threshold_pubkey)
+            .apply_all(&tweaks)
             .unwrap();
+        let (_, R) = signing_nonce(
+            &ids,
+            parse_aggnonce_hex(aggnonce).unwrap(),
+            &tweak_ctx,
+            &msg,
+        )
+        .unwrap();
+        let e = challenge(&R, &tweak_ctx, &msg).unwrap();
+
+        let sig = combine(psigs.iter(), &tweak_ctx, &R, e);
         assert_eq!(hex::encode_upper(sig), expected);
-        verify_bip340(sig, &verifier.signing_pubkey(&tweaks).unwrap(), &msg).unwrap();
+        verify(&threshold_pubkey, sig, &msg, &tweaks).unwrap();
     }
 }

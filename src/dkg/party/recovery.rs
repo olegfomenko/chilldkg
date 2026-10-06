@@ -4,10 +4,10 @@ use crate::chill_dkg_ensure;
 use crate::crypto::certeq::verify_certeq_certificate;
 use crate::crypto::ec::{eval_pub_share, tap_tweak_no_script};
 use crate::crypto::enc::decrypt;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::RecoveryData;
-use crate::party::transitions::serialize_enc_context;
-use crate::party::{DKGOutput, ParticipantInitialState};
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::RecoveryData;
+use crate::dkg::party::transitions::serialize_enc_context;
+use crate::dkg::party::{DKGOutput, ParticipantInitialState};
 use k256::{ProjectivePoint, Scalar};
 
 /// Recover this participant's DKG output from successful-session recovery data.

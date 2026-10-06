@@ -1,8 +1,8 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::common::{parse_hex_array, parse_participant_msg1, parse_point_hex, parse_scalar_hex};
-use chilldkg_rs::errors::ChillDkgError::{DuplicateHostPubkey, HostSeckey, ThresholdOrCount};
-use chilldkg_rs::party::{ParticipantInitialState, ParticipantState};
+use chilldkg_rs::dkg::errors::ChillDkgError::{DuplicateHostPubkey, HostSeckey, ThresholdOrCount};
+use chilldkg_rs::dkg::party::{ParticipantInitialState, ParticipantState};
 
 pub mod common;
 

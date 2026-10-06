@@ -1,6 +1,6 @@
 [package]
 name = "chilldkg-rs"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 license = "MIT"
 description = "Rust implementation of the ChillDKG refers to the BlockstreamResearch BIP-FROST-DKG"
@@ -22,6 +22,7 @@ allow_attributes = "warn"
 
 
 [features]
+default = ["signing"]
 signing = ["dep:itertools"]
 
 [[test]]
@@ -30,6 +31,10 @@ required-features = ["signing"]
 
 [[test]]
 name = "sign_vectors"
+required-features = ["signing"]
+
+[[test]]
+name = "sign_coordinator_vectors"
 required-features = ["signing"]
 
 [[test]]

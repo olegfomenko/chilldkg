@@ -1,10 +1,11 @@
 #![allow(non_snake_case)] // Uppercase identifiers denote curve points.
 
 use crate::chill_dkg_ensure;
-use crate::coordinator::recovery::recover;
 use crate::crypto::certeq::CertEQTranscript;
-use crate::errors::{ChillDkgError, Result};
-use crate::msg::{CoordinatorDKGOutput, ParticipantMsg1, RecoveryData};
+use crate::dkg::ParticipantInitialState;
+use crate::dkg::coordinator::recovery::recover;
+use crate::dkg::errors::{ChillDkgError, Result};
+use crate::dkg::msg::{CoordinatorDKGOutput, ParticipantMsg1, RecoveryData};
 use k256::ProjectivePoint;
 use k256::elliptic_curve::Group;
 
@@ -33,37 +34,8 @@ pub struct CoordinatorInitialState {
 
 impl CoordinatorInitialState {
     pub fn new(host_pubkeys: Vec<ProjectivePoint>, t: usize) -> Result<Self> {
-        let state = Self { t, host_pubkeys };
-        state.validate_session_params()?;
-        Ok(state)
-    }
-
-    fn validate_session_params(&self) -> Result<()> {
-        chill_dkg_ensure!(
-            self.t >= 1
-                && self.t <= self.host_pubkeys.len()
-                && self.host_pubkeys.len() <= u32::MAX as usize,
-            ChillDkgError::ThresholdOrCount,
-        );
-
-        for (i, P_i) in self.host_pubkeys.iter().enumerate() {
-            chill_dkg_ensure!(
-                !bool::from(P_i.is_identity()),
-                ChillDkgError::InvalidHostPubkey { participant: i },
-            );
-
-            for (j, P_j) in self.host_pubkeys.iter().enumerate().skip(i + 1) {
-                chill_dkg_ensure!(
-                    P_i != P_j,
-                    ChillDkgError::DuplicateHostPubkey {
-                        participant1: i,
-                        participant2: j,
-                    },
-                );
-            }
-        }
-
-        Ok(())
+        ParticipantInitialState::validate_public_session_params(&host_pubkeys, t)?;
+        Ok(Self { t, host_pubkeys })
     }
 
     fn validate_participant_msg1(&self, msgs: &[ParticipantMsg1]) -> Result<()> {
