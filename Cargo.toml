@@ -36,3 +36,7 @@ required-features = ["signing"]
 [[test]]
 name = "sign_coordinator_vectors"
 required-features = ["signing"]
+
+[[test]]
+name = "sign_agg_vectors"
+required-features = ["signing"]

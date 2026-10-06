@@ -1,8 +1,8 @@
 //! # ChillDKG
 //!
 //! The high-level SDK for the ChillDKG distributed key generation protocol
-//! (BIP-FROST-DKG). This module wraps the lower-level state machines in
-//! [`party`] and [`coordinator`] behind two driver types, [`Participant`] and
+//! (BIP-FROST-DKG). This module defines the lower-level state machines in
+//! [`party`] and [`coordinator`] and wraps them into two driver types, [`Participant`] and
 //! [`Coordinator`], that track the protocol phase for you and cannot be advanced
 //! out of order.
 //!

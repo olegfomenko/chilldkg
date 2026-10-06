@@ -560,8 +560,9 @@ Current vector coverage:
 - `sign_nonce_vectors`, `sign_vectors`: BIP-FROST-signing `nonce_gen`, `nonce_agg`, `tweak` and
   `sign_verify` vectors (encoding-only error cases omitted).
 - `sign_coordinator_vectors`: the signing coordinator's two rounds, driven by the `sign_verify`
-  error and verify-fail vectors and the `sig_agg` valid vectors. The `sig_agg` vectors are also run
-  against the aggregation step alone in a unit test next to it.
+  error and verify-fail vectors and the `sig_agg` valid vectors.
+- `sign_agg_vectors`: the `sig_agg` vectors against `sign::combine` alone, the reference
+  `partial_sig_agg` (encoding-only error case omitted).
 
 ## Differences From The Reference Implementation
 
@@ -608,8 +609,8 @@ signature, and is checked with the reference vectors. The differences are:
 - The reference `partial_sig_agg` sums partial signatures without verifying them. Ours
   verifies every partial signature before combining, reports a bad one as
   `InvalidContribution` naming the signer, and checks the final signature under the tweaked
-  key. Unverified aggregation is not exposed; its vectors run against the internal
-  combining step only.
+  key. The unverified step is still available as `sign::combine` for callers that verify
+  partial signatures themselves.
 - The reference `ValueError` maps to `SignError::Value`, `InvalidContributionError` to
   `SignError::InvalidContribution`, and its internal assertions to `SignError::Runtime`.
 - Deterministic signing (`deterministic_sign`) is not implemented.
