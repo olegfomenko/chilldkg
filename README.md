@@ -51,15 +51,17 @@ building blocks used by the protocol.
 ## References
 
 - DKG follows the [BlockstreamResearch BIP-FROST-DKG](https://github.com/BlockstreamResearch/bip-frost-dkg)
-  Python reference implementation of ChillDKG and is checked against its test vectors.
+  Python reference implementation of ChillDKG (version 0.3.0, commit `a918968`) and is checked
+  against its test vectors.
 - Signing follows the [BIP-FROST-signing](https://github.com/siv2r/bip-frost-signing) Python
-  reference implementation (BIP445, FROST3 variant) and is checked against its test vectors.
+  reference implementation (BIP 445 version 0.12.1, commit `ba299ba`, FROST3 variant) and is
+  checked against its test vectors.
   It lives behind the `signing` feature, which is enabled by default; opt out for a DKG-only
   build:
 
 ```toml
 [dependencies]
-chilldkg-rs = { version = "0.4", default-features = false }
+chilldkg-rs = { version = "0.5", default-features = false }
 ```
 
 See [Differences From The Reference Implementation](#differences-from-the-reference-implementation)
@@ -586,7 +588,6 @@ differences:
   shares. This crate raises the corresponding unknown-fault error during
   participant step 2, but does not carry the investigation data or implement the
   investigation protocol.
-- Recovery is split into participant and coordinator APIs in this crate.
 - Reference-vector files are adapted only where needed to reach the typed Rust
   API.
 - Recovery validation order is not identical. This affects error classification
@@ -605,9 +606,11 @@ signature, and is checked with the reference vectors. The differences are:
 - Participant ids are the ChillDKG indices and public shares are indexed by id, instead of
   arbitrary identifier and public share lists. Evaluation points are `id + 1` as in
   ChillDKG.
-- The reference bundles the signing inputs into a `SessionContext` holding the aggregate
-  nonce. Ours has no session object: the coordinator relays the individual `(id, pubnonce)`
-  list and every party aggregates it locally, so the signers also learn the signing subset.
+- The reference passes the session parameters and the aggregate nonce explicitly to each
+  algorithm. Our state machines carry them, and we implement the list-relaying variant the
+  BIP describes: the coordinator relays the individual `(id, pubnonce)` list and every party
+  aggregates it locally, so the signers also learn the signing subset and can check the
+  aggregation themselves.
 - The reference `partial_sig_agg` sums partial signatures without verifying them. Ours
   verifies every partial signature before combining, reports a bad one as
   `InvalidContribution` naming the signer, and checks the final signature under the tweaked
