@@ -56,13 +56,17 @@ pub fn reduce_secret_scalar_from_bytes(x: Zeroizing<[u8; EC_SCALAR_BYTES_SIZE]>)
     Zeroizing::new(<Scalar as Reduce<U256>>::reduce_bytes(x.as_slice().into()))
 }
 
+/// BIP341 tweak committing to an unspendable (empty) script path.
+///
+/// Math: `t = H_TapTweak(x(P))` over the x-only serialization of `P`, as
+/// BIP341 specifies; returns `(t * G, t)`.
 pub fn tap_tweak_no_script(p: &ProjectivePoint) -> Result<(ProjectivePoint, Scalar)> {
     chill_dkg_ensure!(
         !bool::from(p.is_identity()),
         CryptoError::Runtime("cannot tap tweak identity point".into()),
     );
 
-    let tweak = parse_scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_default(p)))?;
+    let tweak = parse_scalar_from_bytes(tagged_hash(TAG_TAP_TWEAK, compress_point_bip340(p)))?;
     Ok((ProjectivePoint::GENERATOR * tweak, tweak))
 }
 
