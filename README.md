@@ -320,12 +320,14 @@ The end-to-end test in [lib.rs](./src/lib.rs) runs a full `3`-of-`5` session wit
 FROST signing over a ChillDKG output: any `t` of the `n` participants produce a signature
 that verifies as a plain BIP340 signature under the threshold public key. Participant ids
 are the ChillDKG indices, and the subset that signs is simply the set of ids that
-contribute a nonce. A session takes two messaging rounds:
+contribute a nonce. The number of participants `n` is bounded at 128, as BIP 445
+requires. A session takes two messaging rounds:
 
 1. Every signer derives a nonce pair from local randomness and sends the public half,
    paired with its id, to the coordinator. The coordinator validates the signing subset
    (at least `t` distinct ids in range whose public shares interpolate to the threshold
-   key) and its nonces, then relays the `(id, PubNonce)` list to every signer.
+   key) and its nonces, then relays the `(id, PubNonce)` list to every signer. The nonce
+   is bound to the signer's share and id, and to the message and tweaked key when known.
 2. Every signer takes that list, the message and the tweaks, and produces a partial
    signature. The coordinator verifies each partial signature against its signer's nonce
    and public share, combines them and checks the result under the tweaked threshold key.
@@ -497,8 +499,8 @@ fn main() -> Result<()> {
     // One state per signing session, built from the DKG output.
     let signer = SignerInitialState::from(&output);
 
-    // Round 1: derive a nonce pair bound to the share, the (tweaked) key and
-    // the message; random must be 32 fresh random bytes. Pass None for the
+    // Round 1: derive a nonce pair bound to the share, the id, the (tweaked)
+    // key and the message; random must be 32 fresh random bytes. Pass None for the
     // message and/or tweaks to generate the nonce before they are known.
     let (next, pubnonce) = signer.next((Some(msg.to_vec()), Some(tweaks.clone()), random))?;
     let signer = next.unwrap();
