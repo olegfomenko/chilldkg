@@ -61,7 +61,7 @@ building blocks used by the protocol.
 
 ```toml
 [dependencies]
-chilldkg-rs = { version = "0.5", default-features = false }
+chilldkg-rs = { version = "0.6", default-features = false }
 ```
 
 See [Differences From The Reference Implementation](#differences-from-the-reference-implementation)
