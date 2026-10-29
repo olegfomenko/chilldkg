@@ -123,17 +123,6 @@ impl ParticipantState for ParticipantStep1State {
         let (coordinator_msg, aux) = msg;
         self.validate_coordinator_msg1(&coordinator_msg)?;
 
-        chill_dkg_ensure!(
-            coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
-            ChillDkgError::FaultyCoordinator(
-                "Coordinator sent unexpected first group element for local index".into()
-            ),
-        );
-        chill_dkg_ensure!(
-            coordinator_msg.pubnonces[self.idx] == self.pubnonce,
-            ChillDkgError::FaultyCoordinator("Coordinator replied with wrong pubnonce".into()),
-        );
-
         for i in 0..self.host_pubkeys.len() {
             if i == self.idx {
                 continue;

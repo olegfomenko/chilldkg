@@ -35,7 +35,8 @@ pub enum CryptoError {
     #[error("invalid certificate: {0}")]
     InvalidCertificate(Cow<'static, str>),
 
-    /// The signature at `index` of a certificate does not verify.
+    /// The signature at `index` of a certificate does not verify; `message`
+    /// is the verification failure.
     #[error("invalid certificate signature at index {index}: {message}")]
     InvalidCertificateSignature {
         index: usize,

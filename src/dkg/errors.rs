@@ -73,9 +73,9 @@ pub enum ChillDkgError {
 pub type Result<T> = std::result::Result<T, ChillDkgError>;
 
 /// Attributes crypto failures the way the reference does: a key that fails
-/// to decode belongs to a participant, a malformed certificate comes from the
-/// coordinator, and a bad certificate signature is either the participant's
-/// or the coordinator's fault. `Value` and `Runtime` keep their class.
+/// to decode belongs to a participant, and a malformed certificate or a bad
+/// certificate signature received by a participant comes from the
+/// coordinator. `Value` and `Runtime` keep their class.
 impl From<CryptoError> for ChillDkgError {
     fn from(e: CryptoError) -> Self {
         match e {
@@ -84,11 +84,17 @@ impl From<CryptoError> for ChillDkgError {
                 ChillDkgError::InvalidHostPubkey { participant: index }
             }
             CryptoError::InvalidCertificate(message) => ChillDkgError::FaultyCoordinator(message),
-            CryptoError::InvalidCertificateSignature { index, message } => {
-                ChillDkgError::FaultyParticipantOrCoordinator {
-                    participant: index,
-                    message,
-                }
+            // The coordinator verifies every signature before broadcasting
+            // the certificate, so a participant receiving a bad one blames
+            // the coordinator. The coordinator itself maps this variant to
+            // `FaultyParticipant` at its call site.
+            CryptoError::InvalidCertificateSignature { message, .. } => {
+                ChillDkgError::FaultyCoordinator(
+                    format!(
+                        "Coordinator has provided a certificate with an invalid signature, error = {message}"
+                    )
+                    .into(),
+                )
             }
             CryptoError::Runtime(message) => ChillDkgError::Runtime(message),
         }

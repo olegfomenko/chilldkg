@@ -172,14 +172,28 @@ impl ParticipantStep1State {
                 "Coordinator message 1 has invalid number of encrypted secret shares".into()
             ),
         );
+
+        chill_dkg_ensure!(
+            coordinator_msg.pubnonces[self.idx] == self.pubnonce,
+            ChillDkgError::FaultyCoordinator("Coordinator replied with wrong pubnonce".into()),
+        );
+
         for (i, pubnonce) in coordinator_msg.pubnonces.iter().enumerate() {
             chill_dkg_ensure!(
                 !bool::from(pubnonce.is_identity()),
-                ChillDkgError::FaultyCoordinator(
-                    format!("Coordinator message 1 has invalid public nonce at index {i}").into()
-                ),
+                ChillDkgError::FaultyParticipantOrCoordinator {
+                    participant: i,
+                    message: "invalid public nonce".into(),
+                },
             );
         }
+
+        chill_dkg_ensure!(
+            coordinator_msg.coms_to_secrets[self.idx] == self.com_to_secret,
+            ChillDkgError::FaultyCoordinator(
+                "Coordinator sent unexpected first group element for local index".into()
+            ),
+        );
 
         Ok(())
     }

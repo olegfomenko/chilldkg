@@ -192,11 +192,7 @@ pub fn verify_certeq_certificate(
         if let Err(err) = CertEQVerifier::new(host_pubkeys[i], transcript, i).verify(cert[i]) {
             return Err(CryptoError::InvalidCertificateSignature {
                 index: i,
-                message: format!(
-                    "Participant has provided an invalid signature for the certificate, error = {:?}",
-                    err
-                )
-                .into(),
+                message: format!("{err:?}").into(),
             });
         }
     }

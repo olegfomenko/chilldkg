@@ -99,7 +99,10 @@ impl CoordinatorState for CoordinatorStep1State {
             CryptoError::InvalidCertificateSignature { index, message } => {
                 ChillDkgError::FaultyParticipant {
                     participant: index,
-                    message,
+                    message: format!(
+                        "Participant has provided an invalid signature for the certificate, error = {message}"
+                    )
+                    .into(),
                 }
             }
             other => other.into(),
