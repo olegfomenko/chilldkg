@@ -18,9 +18,9 @@ impl SignerState for SignerInitialState {
     /// The public nonce to send to the coordinator.
     type Output = (usize, PubNonce);
 
-    /// Round 1: derives a nonce pair bound to the secret share and the public
-    /// share, and to the tweaked threshold key and the message when those are
-    /// already known. Whatever is fixed here must be repeated unchanged at
+    /// Round 1: derives a nonce pair bound to the secret share, the
+    /// participant id and the public share, and to the tweaked threshold key
+    /// and the message when those are already known. Whatever is fixed here must be repeated unchanged at
     /// round 2.
     fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         let (msg, tweaks, random) = msg;
@@ -38,6 +38,7 @@ impl SignerState for SignerInitialState {
         let (pubnonce, secnonce) = sample_nonce_internal(
             Zeroizing::new(random),
             Some(&self.secshare),
+            Some(self.idx),
             Some(&self.pubshare()),
             Some(&threshold_pk),
             msg.as_deref(),

@@ -20,10 +20,11 @@ use zeroize::Zeroizing;
 /// threshold key tweaked by `tweaks`, given the public nonces of every signer
 /// (this one included) paired with their participant ids.
 ///
-/// Runs the reference `validate_signers_ctx` checks first, then checks the
-/// signer's own share, signs, and verifies its own result. Single use of the
-/// nonce is the caller's responsibility; the state machine enforces it by
-/// consuming the [`SignerStep1State`](crate::sign::SignerStep1State).
+/// Runs the reference `validate_session_params` checks and derives the
+/// session values first, then checks the nonce and the signer's own share,
+/// signs, and verifies its own result, in the reference's order. Single use
+/// of the nonce is the caller's responsibility; the state machine enforces it
+/// by consuming the [`SignerStep1State`](crate::sign::SignerStep1State).
 ///
 /// Mirrors the reference `sign`.
 ///
@@ -41,19 +42,6 @@ pub fn partial_sign(
     msg: &[u8],
     tweaks: &[Tweak],
 ) -> Result<PartialSignature> {
-    chill_dkg_ensure!(
-        !bool::from(secnonce.k1.is_zero()),
-        SignError::Value("first secnonce value is out of range.".into()),
-    );
-    chill_dkg_ensure!(
-        !bool::from(secnonce.k2.is_zero()),
-        SignError::Value("second secnonce value is out of range.".into()),
-    );
-    chill_dkg_ensure!(
-        !bool::from(secshare.is_zero()),
-        SignError::Value("The signer's secret share value is out of range.".into()),
-    );
-
     // Ids are kept in the given order so validation errors name the same
     // index as the reference; duplicates are rejected by `validate_signers`.
     let ids: Vec<usize> = pubnonces.iter().map(|(id, _)| *id).collect();
@@ -69,6 +57,19 @@ pub fn partial_sign(
 
     let e = challenge(&R, &tweak_ctx, msg)?;
 
+    chill_dkg_ensure!(
+        !bool::from(secnonce.k1.is_zero()),
+        SignError::Value("The first half of secnonce is out of range.".into()),
+    );
+    chill_dkg_ensure!(
+        !bool::from(secnonce.k2.is_zero()),
+        SignError::Value("The second half of secnonce is out of range.".into()),
+    );
+    chill_dkg_ensure!(
+        !bool::from(secshare.is_zero()),
+        SignError::Value("The secshare is out of range.".into()),
+    );
+
     // Fails if idx is not among the signers (so idx < n from here on).
     let a = lagrange(&ids, idx)?;
 
@@ -76,7 +77,9 @@ pub fn partial_sign(
     let pubshare = ProjectivePoint::GENERATOR * secshare;
     chill_dkg_ensure!(
         pubshare == pubshares[idx],
-        SignError::Value("The signer's pubshare must be included in the list of pubshares.".into()),
+        SignError::Value(
+            "The signer's pubshare does not match its entry in the pubshares list.".into()
+        ),
     );
 
     // Public nonce of the un-negated secret nonce, used for the self-check below.

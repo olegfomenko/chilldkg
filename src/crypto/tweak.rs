@@ -91,7 +91,9 @@ impl TweakContext {
         let q = self.q * g + ProjectivePoint::GENERATOR * twk;
         chill_dkg_ensure!(
             !bool::from(q.is_identity()),
-            CryptoError::Value("The result of tweaking cannot be infinity.".into()),
+            CryptoError::Value(
+                "The tweaked threshold public key must not be the point at infinity.".into()
+            ),
         );
 
         Ok(Self {

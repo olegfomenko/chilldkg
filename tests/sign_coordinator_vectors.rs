@@ -14,15 +14,15 @@ fn key_material() -> CoordinatorDKGOutput {
     CoordinatorDKGOutput {
         t: 2,
         threshold_pubkey: parse_point_hex(
-            "03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237",
+            "02D772A09F5F675783D275ED9F6AAEDB2ECCBC74171B37AC23AE3BBD9D7AE2CDAA",
         )
         .unwrap(),
         pubshares: vec![
-            parse_point_hex("022B02109FBCFB4DA3F53C7393B22E72A2A51C4AFBF0C01AAF44F73843CFB4B74B")
+            parse_point_hex("039EE3335AF48DFE23702AB353F4AF20D401F67A130DF783CC8457323A860A2FB4")
                 .unwrap(),
-            parse_point_hex("02EC6444271D791A1DA95300329DB2268611B9C60E193DABFDEE0AA816AE512583")
+            parse_point_hex("0284DC4AB2CB78A621EB87FA1F14BCE2B725AFEAAC981ADCBAFF5CC2D417D2A63A")
                 .unwrap(),
-            parse_point_hex("03113F810F612567D9552F46AF9BDA21A67D52060F95BD4A723F4B60B1820D3676")
+            parse_point_hex("036441EC2D4C1266201CD89B69549A2F5B2188612A0D434153E625FB38173DD509")
                 .unwrap(),
         ],
     }
@@ -32,9 +32,9 @@ fn key_material() -> CoordinatorDKGOutput {
 /// participant id.
 fn pubnonces() -> [PubNonce; 3] {
     [
-        "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
-        "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
-        "022A6084A7614CDBA50397DFFC922AFB40CB848AE3341D5EA2F6E8BEA5ECAC1B9D02298852FE90C793305C4B7E02F80DC04BD29CBEA7FD99972993172AE030384151",
+        "028213A4194E3A70790607123B9A6D7A3363A62B8117C2DA1AFB40DE5B0EE4E06002EBAD9B1A145E503BCF05A4D05DB99E6B1A30098F26FA6305CDE8D59B32DBAC43",
+        "02FB84325E2E570263DD8C1772FD17E810C0E938EEBFD0FA4AF39FB58507A5D48003FAD5DDF645F8197F9336480F34D928C2F69B1C44D88A8B1C57E93206CBDDF23D",
+        "03B64B264AD117E20AD57BDC5A7EA33701CF1D6C7A7C19A946D082AA7746EFA1D102AD5BDCE55A642497B0932D584E26433722853F1D43387ACEDB4E9559D7CE0FB8",
     ]
     .map(|h| parse_pubnonce_hex(h).unwrap())
 }
@@ -55,7 +55,7 @@ fn test_coordinator_step1_passes() {
     let pubnonces = pubnonces();
 
     // Signer subsets from the `sign_verify` valid vectors.
-    for ids in [vec![0, 1], vec![1, 0], vec![1, 2], vec![0, 1, 2]] {
+    for ids in [vec![0, 1], vec![2, 1, 0], vec![1, 2], vec![0, 1, 2]] {
         let input: Vec<_> = ids.iter().map(|&id| (id, pubnonces[id].clone())).collect();
 
         let initial = CoordinatorInitialState::new(&key);
@@ -89,28 +89,31 @@ fn test_coordinator_step1_rejects_invalid_inputs() {
             vec![0, 1, 1],
             [0, 1, 2],
             None,
-            Value("The participant identifier list contains duplicate elements.".into()),
+            Value("The ids list contains duplicate elements.".into()),
         ),
         // A signer id is outside the valid range [0, n-1]
         (
             vec![3, 1],
             [0, 1, 2],
             None,
-            Value("The participant identifier at index 0 is out of range.".into()),
+            Value("The id at index 0 must satisfy 0 <= id <= n - 1.".into()),
         ),
         // Signer set's public shares do not match the threshold public key
         (
-            vec![0, 1],
-            [0, 2, 2],
+            vec![0, 1, 2],
+            [0, 2, 1],
             None,
-            Value("The provided key material is incorrect.".into()),
+            Value(
+                "The provided key material is incorrect: the public shares do not match the threshold public key."
+                    .into(),
+            ),
         ),
         // Fewer signers than the threshold t
         (
             vec![0],
             [0, 1, 2],
             None,
-            Value("The number of signers must be between t and n.".into()),
+            Value("The number of signers must satisfy t <= u <= n.".into()),
         ),
         // A signer contributed the identity as its public nonce (not a
         // reference vector: the reference only rejects this at decoding)
@@ -150,86 +153,90 @@ fn test_coordinator_finalize_passes() {
     // `sign_verify` public nonces, so the partial signatures verify against
     // the individual nonces and the coordinator can run its full round 2.
     let msg =
-        hex::decode("599C67EA410D005B9DA90817CF03ED3B1C868E4DA4EDF00A5880B0082C237869").unwrap();
+        hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
 
     // (signers as (id, psig), tweaks, expected signature)
     for (psigs, tweaks_hex, expected) in [
-        // Minimum threshold subset of signers (t=2 of n=3), no tweaks
+        // Minimum threshold subset of signers, no tweaks
         (
             vec![
                 (
                     0,
-                    "911E1C3821D5C4314C32BF7B312C39B7D9A2C54FB3EF1E3349395299A781ED93",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
                 (
                     1,
-                    "6F6E24B9ADD50F74B329F27A6EC30250A89938AD8C9CBE0235BD8EB8EAEA9EE2",
+                    "F6FC1814C8BDF89041FE10F91AD306CEF0E90CBD5003BE216D6C40B891469016",
                 ),
             ],
             vec![],
-            "5527965735029EAD5BBF977E71E06B601589E22E241F11DD68F420E75FE4AC63008C40F1CFAAD3A5FF5CB1F59FEF3C09C78D211691433BF9BF2482C5C2364B34",
+            "B89B25226C5ED33AD67F5BD7C750516ED05DA326E36D9878A26C385B891E9A65B478634CE7387577AA8FD15DE92959169A77777F79A02141C2D0AA6BEC394FDD",
         ),
-        // Signer order does not affect the aggregate signature: partial signatures are summed, so this matches the first valid case
+        // Signer set in descending order, so the identifiers must be sorted before hashing
         (
             vec![
                 (
+                    2,
+                    "4636795DA140BB1DD14B7FA73FE3FD0CC24A9C08786ABE1CCBAAC776BC64F34C",
+                ),
+                (
                     1,
-                    "6F6E24B9ADD50F74B329F27A6EC30250A89938AD8C9CBE0235BD8EB8EAEA9EE2",
+                    "2C1B45EB5E01613D4ACC325D2A3A5677F60750ADC9706BCCCDAFD144B45C72AF",
                 ),
                 (
                     0,
-                    "911E1C3821D5C4314C32BF7B312C39B7D9A2C54FB3EF1E3349395299A781ED93",
+                    "763E4353210C86236AEA8E073FAFE564981ED70BCF096CFBECCE88B5F24F0EC9",
                 ),
             ],
             vec![],
-            "5527965735029EAD5BBF977E71E06B601589E22E241F11DD68F420E75FE4AC63008C40F1CFAAD3A5FF5CB1F59FEF3C09C78D211691433BF9BF2482C5C2364B34",
+            "51A7FA5FFE4739217B46AE2D8570EF354AB19663AA27358F9460E6184048CB40E890029C204EA27E8702400BA9CE38E95070C3C210E496E586292171631074C4",
         ),
-        // Aggregation with three tweaks applied (one x-only, two plain)
+        // Aggregation with three tweaks applied (one plain, two x-only)
         (
             vec![
                 (
                     0,
-                    "BFFDAC5F3CB017F2DEF06D1D7703A50875CF18D4F9CFCFE1FD0261D1250655A8",
+                    "AE2818DFC14FD4903FBA3778BDF27C0B3B5863AEEFDDA6540A73A22C4E734D10",
                 ),
                 (
                     1,
-                    "1792D36FD56EBA5A303C7F7E367B3EB48D6F631258FF396C36F4AA7D268039FA",
+                    "21780564C5FF2FBC16724039E98740A7E33CECBFDF11EC52300BA12C278B4531",
                 ),
             ],
             vec![
                 (
-                    "B511DA492182A91B0FFB9A98020D55F260AE86D7ECBD0399C7383D59A5F2AF7C",
+                    "E8F791FF9225A2AF0102AFFF4A9A723D9612A682A25EBE79802B263CDFCD83BB",
+                    false,
+                ),
+                (
+                    "AE2EA797CC0FE72AC5B97B97F3C6957D7E4199A167A58EB08BCAFFDA70AC0455",
                     true,
                 ),
                 (
-                    "A815FE049EE3C5AAB66310477FBC8BCCCAC2F3395F59F921C364ACD78A2F48DC",
-                    false,
-                ),
-                (
-                    "75448A87274B056468B977BE06EB1E9F657577B7320B0A3376EA51FD420D18A8",
-                    false,
+                    "F52ECBC565B3D8BEA2DFD5B75A4F457E54369809322E4120831626F290FA87E0",
+                    true,
                 ),
             ],
-            "6D5558EB783A023F2A09BDE65D3E9DB79928702D4143BCFD69C2074C9A143F5108D818ADC9BD3AA2B9DC669B66AD9EF420FDBF97558DB65D9528C27FBEB3308E",
+            "95CB034D179622277EA691064988749ADDADFCFF36E0542B288F0D36CE5DACD173239D0A5A4B0BD8721E2286EBCB11B6D62174BAFF8D17E0191B9B9CDC8156AE",
         ),
-        // All n=3 signers participate, no tweaks
+        // All signers participate, no tweaks
         (
             vec![
                 (
                     0,
-                    "96CCC80C315D5F61DA34B6FF7FB86CFB642FD1410089B7B6CE205C50C22891CF",
+                    "763E4353210C86236AEA8E073FAFE564981ED70BCF096CFBECCE88B5F24F0EC9",
                 ),
                 (
                     1,
-                    "33E5776846D493D422F995B676A73ACE7897345081DC569B2FE3BC0940F72DD6",
+                    "2C1B45EB5E01613D4ACC325D2A3A5677F60750ADC9706BCCCDAFD144B45C72AF",
                 ),
                 (
                     2,
-                    "B907873BD954272E5B3E97DAC1CC93D6DF1BF8161A69D2C548B3C1D405CF1C2C",
+                    "4636795DA140BB1DD14B7FA73FE3FD0CC24A9C08786ABE1CCBAAC776BC64F34C",
                 ),
             ],
             vec![],
-            "12FADDB3E8C8A8B95E6C36E5B33CB657A840A2EC1DDABCC19D05E99FD71F637583B9C6B051861A64586CE490B82C3BA2013420C0ED8740DB86E57BA138B89A90",
+            "51A7FA5FFE4739217B46AE2D8570EF354AB19663AA27358F9460E6184048CB40E890029C204EA27E8702400BA9CE38E95070C3C210E496E586292171631074C4",
         ),
     ] {
         let input: Vec<_> = psigs
@@ -261,40 +268,24 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
 
     // (signer ids fixed at round 1, partial signatures as (id, psig), error)
     for (ids, psigs, expected_error) in [
-        // Partial signatures do not come from the signer set fixed at round 1
+        // Number of partial signatures does not match the number of signers
         (
             vec![0, 1],
             vec![
                 (
                     0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
-                ),
-                (
-                    2,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
-                ),
-            ],
-            Value("invalid list of signer ids".into()),
-        ),
-        // More partial signatures than signers (not a reference vector: the
-        // reference rejects the list by length)
-        (
-            vec![0, 1],
-            vec![
-                (
-                    0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
                 (
                     0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
                 (
                     1,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "F6FC1814C8BDF89041FE10F91AD306CEF0E90CBD5003BE216D6C40B891469016",
                 ),
             ],
-            Value("invalid number of signatures".into()),
+            Value("The psigs and ids lists must have the same length.".into()),
         ),
         // Two partial signatures under the same id, one signer missing (not a
         // reference vector)
@@ -303,11 +294,11 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
             vec![
                 (
                     0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
                 (
                     0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
             ],
             Value("invalid list of signer ids".into()),
@@ -318,11 +309,11 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
             vec![
                 (
                     0,
-                    "FB9C49E9C0A16F2F5F6BD25550EC8652431DAE39706F3C157D9F9E5F92BE911B",
+                    "4283B4C7E1858318976E3F9B31A9ADB85671953DD6639CDFAA9B964CA50D4039",
                 ),
                 (
                     1,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "F6FC1814C8BDF89041FE10F91AD306CEF0E90CBD5003BE216D6C40B891469016",
                 ),
             ],
             InvalidContribution {
@@ -336,11 +327,11 @@ fn test_coordinator_finalize_rejects_invalid_inputs() {
             vec![
                 (
                     0,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
                 (
                     1,
-                    "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+                    "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
                 ),
             ],
             InvalidContribution {

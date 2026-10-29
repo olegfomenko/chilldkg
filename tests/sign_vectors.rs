@@ -9,6 +9,7 @@ use chilldkg_rs::sign::{
     PartialSignature, PubNonce, SecNonce, SignerState, SignerStep1State, Tweak, aggr_pubnonces,
     partial_verify,
 };
+use k256::ProjectivePoint;
 
 pub mod common;
 
@@ -16,21 +17,21 @@ fn key_material() -> CoordinatorDKGOutput {
     CoordinatorDKGOutput {
         t: 2,
         threshold_pubkey: parse_point_hex(
-            "03B02645D79ABFC494338139410F9D7F0A72BE86C952D6BDE1A66447B8A8D69237",
+            "02D772A09F5F675783D275ED9F6AAEDB2ECCBC74171B37AC23AE3BBD9D7AE2CDAA",
         )
         .unwrap(),
         pubshares: vec![
-            parse_point_hex("022B02109FBCFB4DA3F53C7393B22E72A2A51C4AFBF0C01AAF44F73843CFB4B74B")
+            parse_point_hex("039EE3335AF48DFE23702AB353F4AF20D401F67A130DF783CC8457323A860A2FB4")
                 .unwrap(),
-            parse_point_hex("02EC6444271D791A1DA95300329DB2268611B9C60E193DABFDEE0AA816AE512583")
+            parse_point_hex("0284DC4AB2CB78A621EB87FA1F14BCE2B725AFEAAC981ADCBAFF5CC2D417D2A63A")
                 .unwrap(),
-            parse_point_hex("03113F810F612567D9552F46AF9BDA21A67D52060F95BD4A723F4B60B1820D3676")
+            parse_point_hex("036441EC2D4C1266201CD89B69549A2F5B2188612A0D434153E625FB38173DD509")
                 .unwrap(),
         ],
     }
 }
 
-/// Participant 0's secret nonce (`k_1 || k_2`) from the vectors.
+/// A secret nonce (`k_1 || k_2`) from the vectors.
 fn secnonce(hex: &str) -> SecNonce {
     SecNonce {
         k1: parse_scalar_hex(&hex[..64]).unwrap(),
@@ -86,14 +87,25 @@ fn tweaks(tweaks: &[(&str, bool)]) -> Vec<Tweak> {
 #[test]
 fn test_sign_passes() {
     let key = key_material();
-    let secshare =
-        parse_scalar_hex("CCD2EF4559DB05635091D80189AB3544D6668EFC0500A8D5FF51A1F4D32CC1F1")
-            .unwrap();
+    // Secret material of participants 0, 1 and 2.
+    let secshares = [
+        "53442FA9BD72EEA0A42DF6F2D2D76A2C0D3A3DFA2BE2F820F41ADE976B8259FB",
+        "5A7F9BD41F4B544664C54D777D43303CB5302434F9903B9B552C4E552BF02201",
+        "61BB07FE8123B9EC255CA3FC27AEF64D5D260A6FC73D7F15B63DBE12EC5DEA07",
+    ]
+    .map(|h| parse_scalar_hex(h).unwrap());
+    let secnonces = [
+        "874A212D2DF14B0E55D5E9B86B0B6530A83BA59785303E333AB9F6193289D4A3B5DE529495EC16F25C1452C2732363C38623725EAE7BBCA47BD1AB43B3E21792",
+        "7B3932D72200FDDD616B2CB6DDD9B263D566DC290FD6F6965BB01A813F05BA971B5C79608E807BDA020227517B70DC848479BC9139803A489BC58C5E9E5F9F10",
+        "3D85A0D7947B3445C60CBCB8CFDA98ECF10FCF45AF8DF3C7026EC127E9DA798D9C857374248DA423F9071D6A646128E6EA09A01363033C09E46ED079D6698DE0",
+    ];
+    // Public nonces of participants 0, 1 and 2, plus (index 3) one that
+    // cancels the first two so the aggregate nonce is the point at infinity.
     let pubnonce_pool = [
-        "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
-        "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
-        "022A6084A7614CDBA50397DFFC922AFB40CB848AE3341D5EA2F6E8BEA5ECAC1B9D02298852FE90C793305C4B7E02F80DC04BD29CBEA7FD99972993172AE030384151",
-        "03ABA4374155062E973007AC12D2CB1BCB70A76ACF3CFCE6F9E2160CF5D7DD4CCB02EB324CCEF66810F01197F28E63B97B50D7F6503940709E8DDD0313144D039568",
+        "028213A4194E3A70790607123B9A6D7A3363A62B8117C2DA1AFB40DE5B0EE4E06002EBAD9B1A145E503BCF05A4D05DB99E6B1A30098F26FA6305CDE8D59B32DBAC43",
+        "02FB84325E2E570263DD8C1772FD17E810C0E938EEBFD0FA4AF39FB58507A5D48003FAD5DDF645F8197F9336480F34D928C2F69B1C44D88A8B1C57E93206CBDDF23D",
+        "03B64B264AD117E20AD57BDC5A7EA33701CF1D6C7A7C19A946D082AA7746EFA1D102AD5BDCE55A642497B0932D584E26433722853F1D43387ACEDB4E9559D7CE0FB8",
+        "0358D346E23685E092E143BD203EEC8597131390B1300E9466C9B741EC65FCCFC6039C9B5D46EF571F128C657306C86AC24E2E58CAC742788645A29E1CC0CEFFB316",
     ]
     .map(|h| parse_pubnonce_hex(h).unwrap());
     let msgs = [
@@ -103,15 +115,55 @@ fn test_sign_passes() {
     ]
     .map(|h| hex::decode(h).unwrap());
 
-    // (signers as (id, pubnonce pool index), tweaks, msg index, my_id, expected psig)
-    for (signers, tweaks_hex, msg_index, my_id, expected) in [
-        // No tweaks applied
+    // (signers as (id, pubnonce pool index), tweaks, msg index, signer id, expected psig)
+    for (signers, tweaks_hex, msg_index, signer_id, expected) in [
+        // Minimum threshold subset of signers
         (
             vec![(0, 0), (1, 1)],
             vec![],
             0,
             0,
-            "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+            "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
+        ),
+        // Signer set in descending order, so the identifiers must be sorted before hashing
+        (
+            vec![(2, 2), (1, 1), (0, 0)],
+            vec![],
+            0,
+            1,
+            "2C1B45EB5E01613D4ACC325D2A3A5677F60750ADC9706BCCCDAFD144B45C72AF",
+        ),
+        // A different threshold subset gives a different partial signature, since the Lagrange coefficients depend on the signer set
+        (
+            vec![(1, 1), (2, 2)],
+            vec![],
+            0,
+            1,
+            "402438A10A54BC3B94AC3EBD8B95B540474E6AE5730B78A9FE11319C48654A9D",
+        ),
+        // Aggregate nonce is the point at infinity, so the final nonce point falls back to the generator G
+        (
+            vec![(0, 0), (1, 1), (2, 3)],
+            vec![],
+            0,
+            0,
+            "C874C21E5E2F850494E61433C9A5DBAEDA14588DBC0BE3EA564611FE859226B3",
+        ),
+        // Empty message
+        (
+            vec![(0, 0), (1, 1)],
+            vec![],
+            1,
+            0,
+            "CADAD81BC9AD421790DB199BAEE5FC7FBE37D7FD5294474D8732309F3A78B658",
+        ),
+        // Non-standard message length (38 bytes)
+        (
+            vec![(0, 0), (1, 1)],
+            vec![],
+            2,
+            0,
+            "ED73261B0C4F0CAA222B66C8E96C36B1F2374EEF808578E4580AAD7D2CCD800A",
         ),
         // Single x-only tweak (used for BIP341 Taproot)
         (
@@ -122,7 +174,7 @@ fn test_sign_passes() {
             )],
             0,
             0,
-            "D9BA772C07C931FBAFC0DCD4BED4CACCEAFBB78C1C875BE8C2B7964B7E078452",
+            "F9D628F22F0CE83B04E888971472596F70754B5044473853F2464C6DD7A8091B",
         ),
         // Single plain tweak (used for BIP32 derivation)
         (
@@ -133,7 +185,7 @@ fn test_sign_passes() {
             )],
             0,
             0,
-            "0250E76AE0FF75ADA6289CAAF4867C26EAB83C1B663A0810BEB21259C1676311",
+            "F9D628F22F0CE83B04E888971472596F70754B5044473853F2464C6DD7A8091B",
         ),
         // A plain tweak followed by an x-only tweak
         (
@@ -150,7 +202,7 @@ fn test_sign_passes() {
             ],
             0,
             0,
-            "B6684D187FC396F4E245ED9EC3A478DB938D0B9AE09370A14C52A8ACB01008AB",
+            "55E01D1976FF7A236BA2A0051CFAE6DDBF23D5B5B3159E8C717E380AB8C32CBB",
         ),
         // Four tweaks alternating x-only and plain
         (
@@ -175,7 +227,7 @@ fn test_sign_passes() {
             ],
             0,
             0,
-            "F026C5B3BD2686448D4F0ABEE8F0B68E85B686BA974665D3C369C0481C82A1B9",
+            "BBE0F7C4ED3027F0AC1C5E35731BE0A7EF6A78D15A1A9AAC8D0C01B2AA7FD4D8",
         ),
         // Four tweaks: two plain followed by two x-only
         (
@@ -199,89 +251,19 @@ fn test_sign_passes() {
                 ),
             ],
             0,
-            0,
-            "19831834CF227BE6B371C1D36A684DD1D30A8FC00D1418E11DF4A1A500006D72",
-        ),
-        // Same tweaks as the previous case but with all 3 signers; the partial signature differs because the Lagrange coefficient depends on the signer set
-        (
-            vec![(0, 0), (1, 1), (2, 2)],
-            vec![
-                (
-                    "E8F791FF9225A2AF0102AFFF4A9A723D9612A682A25EBE79802B263CDFCD83BB",
-                    false,
-                ),
-                (
-                    "AE2EA797CC0FE72AC5B97B97F3C6957D7E4199A167A58EB08BCAFFDA70AC0455",
-                    false,
-                ),
-                (
-                    "F52ECBC565B3D8BEA2DFD5B75A4F457E54369809322E4120831626F290FA87E0",
-                    true,
-                ),
-                (
-                    "1969AD73CC177FA0B4FCED6DF1F7BF9907E665FDE9BA196A74FED0A3CF5AEF9D",
-                    true,
-                ),
-            ],
-            0,
-            0,
-            "FCDADA0021DC1C7C96A0097A596912382BD08757297E4024FAADF428368418EC",
-        ),
-        // Minimum threshold subset of signers (t=2 of n=3)
-        (
-            vec![(0, 0), (1, 1)],
-            vec![],
-            0,
-            0,
-            "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
-        ),
-        // Signer order does not affect the partial signature: the signer set is sorted internally, so this matches the first valid case
-        (
-            vec![(1, 1), (0, 0)],
-            vec![],
-            0,
-            0,
-            "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
-        ),
-        // A different threshold subset gives a different partial signature, since the Lagrange coefficients depend on the signer set
-        (
-            vec![(0, 0), (2, 2)],
-            vec![],
-            0,
-            0,
-            "5C8DF052E993D2157A3408E1D800D5D1812CD8D34703E68A46E9E1D1B2634C5E",
-        ),
-        // All n=3 signers participate (signer set equals the full group)
-        (
-            vec![(0, 0), (1, 1), (2, 2)],
-            vec![],
-            0,
-            0,
-            "006B9CB48E3EC79F0DB2D640CFA75DFA223C27C96728C615733C1EBFC8CB3B20",
-        ),
-        // Aggregate nonce is the point at infinity, so the final nonce point falls back to the generator G
-        (
-            vec![(0, 0), (1, 1), (2, 3)],
-            vec![],
-            0,
-            0,
-            "6FF6F55F78B4E5FE4860381D3845D4E1D609CDC8352150AB70C3D3814DD78D14",
-        ),
-        // Empty message
-        (
-            vec![(0, 0), (1, 1)],
-            vec![],
             1,
-            0,
-            "301EF5B7AFEB52B217291F05898E3109D78DF39232FC93DA8F6D2FFC60F55668",
+            "30CFDD50B5F08DFE30E30F1DEE0CE1BD0168D3E53F545D4DED4D411A17CD9ADE",
         ),
-        // Non-standard message length (38 bytes)
+        // Plain tweak of zero, which is in range
         (
             vec![(0, 0), (1, 1)],
-            vec![],
-            2,
+            vec![(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+                false,
+            )],
             0,
-            "E636F1033039FF2757E6EFCFEFC8C742B01F003EBCA2E6AFBB741D8F0A2A0963",
+            0,
+            "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
         ),
     ] {
         let pubnonces: Vec<_> = signers
@@ -291,23 +273,21 @@ fn test_sign_passes() {
         let tweaks = tweaks(&tweaks_hex);
         let msg = &msgs[msg_index];
 
-        // Participant 0 after round 1, with the vector's nonce.
+        // The signer after round 1, with the vector's nonce.
         let signer = SignerStep1State {
-            idx: 0,
+            idx: signer_id,
             t: key.t,
-            secshare,
+            secshare: secshares[signer_id],
             pubshares: key.pubshares.clone(),
             threshold_pubkey: key.threshold_pubkey,
             msg: Some(msg.clone()),
             tweaks: Some(tweaks.clone()),
-            secnonce: secnonce(
-                "493A7862206B66B2D2E1B60583C8D3477D71EF66E5C628A30EF619665C86FE970057939BD14AB8EC43ACE8AA98CA359BBF0BF7432115DC52C173DD77104C1213",
-            ),
+            secnonce: secnonce(secnonces[signer_id]),
         };
         let (_, (id, psig)) = signer
             .next((pubnonces.clone(), msg.clone(), tweaks.clone()))
             .unwrap();
-        assert_eq!(id, my_id);
+        assert_eq!(id, signer_id);
         assert_eq!(hex::encode_upper(psig.to_bytes()), expected);
     }
 }
@@ -315,56 +295,78 @@ fn test_sign_passes() {
 #[test]
 fn test_sign_rejects_invalid_inputs() {
     let secnonces = [
-        "493A7862206B66B2D2E1B60583C8D3477D71EF66E5C628A30EF619665C86FE970057939BD14AB8EC43ACE8AA98CA359BBF0BF7432115DC52C173DD77104C1213",
+        "874A212D2DF14B0E55D5E9B86B0B6530A83BA59785303E333AB9F6193289D4A3B5DE529495EC16F25C1452C2732363C38623725EAE7BBCA47BD1AB43B3E21792",
+        "7B3932D72200FDDD616B2CB6DDD9B263D566DC290FD6F6965BB01A813F05BA971B5C79608E807BDA020227517B70DC848479BC9139803A489BC58C5E9E5F9F10",
         "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-        "493A7862206B66B2D2E1B60583C8D3477D71EF66E5C628A30EF619665C86FE970000000000000000000000000000000000000000000000000000000000000000",
+        "874A212D2DF14B0E55D5E9B86B0B6530A83BA59785303E333AB9F6193289D4A30000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000000B5DE529495EC16F25C1452C2732363C38623725EAE7BBCA47BD1AB43B3E21792",
     ];
     let secshares = [
-        "CCD2EF4559DB05635091D80189AB3544D6668EFC0500A8D5FF51A1F4D32CC1F1",
+        "53442FA9BD72EEA0A42DF6F2D2D76A2C0D3A3DFA2BE2F820F41ADE976B8259FB",
+        "5A7F9BD41F4B544664C54D777D43303CB5302434F9903B9B552C4E552BF02201",
         "0000000000000000000000000000000000000000000000000000000000000000",
     ];
-    let pubshare_pool = key_material().pubshares;
+    // Public shares of participants 0, 1 and 2, then (index 3) the identity
+    // in place of the vectors' undecodable point, (index 4) a point that makes
+    // the shares of 0 and 1 interpolate to infinity, and (index 5) G.
+    let pubshare_pool = [
+        parse_point_hex("039EE3335AF48DFE23702AB353F4AF20D401F67A130DF783CC8457323A860A2FB4")
+            .unwrap(),
+        parse_point_hex("0284DC4AB2CB78A621EB87FA1F14BCE2B725AFEAAC981ADCBAFF5CC2D417D2A63A")
+            .unwrap(),
+        parse_point_hex("036441EC2D4C1266201CD89B69549A2F5B2188612A0D434153E625FB38173DD509")
+            .unwrap(),
+        ProjectivePoint::IDENTITY,
+        parse_point_hex("02A5363A0993E3E2096EF80B7B4DA1EDF650DBF02CAE168BB4ACC0E90A24CED0FD")
+            .unwrap(),
+        parse_point_hex("0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")
+            .unwrap(),
+    ];
     let pubnonce_pool = [
-        "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
-        "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
-        "022A6084A7614CDBA50397DFFC922AFB40CB848AE3341D5EA2F6E8BEA5ECAC1B9D02298852FE90C793305C4B7E02F80DC04BD29CBEA7FD99972993172AE030384151",
+        "028213A4194E3A70790607123B9A6D7A3363A62B8117C2DA1AFB40DE5B0EE4E06002EBAD9B1A145E503BCF05A4D05DB99E6B1A30098F26FA6305CDE8D59B32DBAC43",
+        "02FB84325E2E570263DD8C1772FD17E810C0E938EEBFD0FA4AF39FB58507A5D48003FAD5DDF645F8197F9336480F34D928C2F69B1C44D88A8B1C57E93206CBDDF23D",
+        "03B64B264AD117E20AD57BDC5A7EA33701CF1D6C7A7C19A946D082AA7746EFA1D102AD5BDCE55A642497B0932D584E26433722853F1D43387ACEDB4E9559D7CE0FB8",
     ]
     .map(|h| parse_pubnonce_hex(h).unwrap());
     let msg =
         hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
 
-    // The signing step reproduces the reference's check order: the secret
-    // nonce and share, then the signers context, then the signer's own id
-    // and public share.
-    // (ids, verifier pubshares as pool indices, tweaks, my_id, secnonce index, secshare index, error)
-    for (ids, pubshares, tweaks_hex, my_id, secnonce_index, secshare_index, expected_error) in [
-        // Tweak exceeds the group order
+    // The signing step reproduces the reference's check order: the session
+    // parameters and tweaks, then the secret nonce and share, then the
+    // signer's own id and public share.
+    // (ids, signer pubshares as pool indices by id, tweaks, signer id, secnonce index, secshare index, error)
+    for (ids, pubshares, tweaks_hex, signer_id, secnonce_index, secshare_index, expected_error) in [
+        // Tweak equals the group order, which is out of range
         (
             vec![0, 1],
             [0, 1, 2],
-            vec![(
-                "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
-                false,
-            )],
+            vec![
+                (
+                    "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
+                    false,
+                ),
+            ],
             0,
             0,
             0,
             Value("The tweak value is out of range.".into()),
         ),
-        // Tweak drives the tweaked public key to the point at infinity
+        // Plain tweak drives the tweaked threshold public key to the point at infinity
         (
             vec![0, 1],
             [0, 1, 2],
-            vec![(
-                "C8FA70D93D4F99492E01B34792EF6CEE74F9C216E5FE3CC80D2065B3C4C8BD5A",
-                false,
-            )],
+            vec![
+                (
+                    "B3F73C80A46577051C695F91D7945BE3556A85275112EB952CC8EFB32521AF4C",
+                    false,
+                ),
+            ],
             0,
             0,
             0,
-            Value("The result of tweaking cannot be infinity.".into()),
+            Value("The tweaked threshold public key must not be the point at infinity.".into()),
         ),
-        // Signer's own id is not in the signer set
+        // Signer's id is absent from the signer set
         (
             vec![0, 1],
             [0, 1, 2],
@@ -372,7 +374,7 @@ fn test_sign_rejects_invalid_inputs() {
             2,
             0,
             0,
-            Value("The signer's id must be present in the participant identifier list.".into()),
+            Value("The signer's id is missing from the ids list.".into()),
         ),
         // Signer set contains a duplicate id
         (
@@ -382,17 +384,37 @@ fn test_sign_rejects_invalid_inputs() {
             0,
             0,
             0,
-            Value("The participant identifier list contains duplicate elements.".into()),
+            Value("The ids list contains duplicate elements.".into()),
         ),
-        // Signer's own public share is not in the public share list
+        // Signer's public share does not match the public share listed at its index
         (
-            vec![1, 2],
+            vec![0, 1],
             [0, 1, 2],
             vec![],
             1,
             0,
             0,
-            Value("The signer's pubshare must be included in the list of pubshares.".into()),
+            Value("The signer's pubshare does not match its entry in the pubshares list.".into()),
+        ),
+        // A public share is not a valid point
+        (
+            vec![0, 1],
+            [0, 3, 2],
+            vec![],
+            0,
+            0,
+            0,
+            Value("The pubshare at index 1 is not a valid point.".into()),
+        ),
+        // Public shares of the signer set interpolate to the point at infinity
+        (
+            vec![0, 1],
+            [0, 4, 2],
+            vec![],
+            0,
+            0,
+            0,
+            Value("The threshold public key must not be the point at infinity.".into()),
         ),
         // A signer id is outside the valid range [0, n-1]
         (
@@ -400,19 +422,29 @@ fn test_sign_rejects_invalid_inputs() {
             [0, 1, 2],
             vec![],
             1,
-            0,
-            0,
-            Value("The participant identifier at index 0 is out of range.".into()),
+            1,
+            1,
+            Value("The id at index 0 must satisfy 0 <= id <= n - 1.".into()),
         ),
         // Signer set's public shares do not match the threshold public key
         (
-            vec![0, 1],
-            [0, 2, 2],
+            vec![0, 1, 2],
+            [0, 2, 1],
             vec![],
             0,
             0,
             0,
-            Value("The provided key material is incorrect.".into()),
+            Value("The provided key material is incorrect: the public shares do not match the threshold public key.".into()),
+        ),
+        // Public share beyond the first t signers is inconsistent with the threshold public key
+        (
+            vec![0, 1, 2],
+            [0, 1, 5],
+            vec![],
+            0,
+            0,
+            0,
+            Value("The provided key material is incorrect: the public shares do not match the threshold public key.".into()),
         ),
         // Secret nonce's first half is out of range (all-zero nonce, which may indicate nonce reuse)
         (
@@ -420,9 +452,9 @@ fn test_sign_rejects_invalid_inputs() {
             [0, 1, 2],
             vec![],
             0,
-            1,
+            2,
             0,
-            Value("first secnonce value is out of range.".into()),
+            Value("The first half of secnonce is out of range.".into()),
         ),
         // Secret nonce's second half is out of range (zero)
         (
@@ -430,9 +462,19 @@ fn test_sign_rejects_invalid_inputs() {
             [0, 1, 2],
             vec![],
             0,
-            2,
+            3,
             0,
-            Value("second secnonce value is out of range.".into()),
+            Value("The second half of secnonce is out of range.".into()),
+        ),
+        // Secret nonce's first half is out of range (zero)
+        (
+            vec![0, 1],
+            [0, 1, 2],
+            vec![],
+            0,
+            4,
+            0,
+            Value("The first half of secnonce is out of range.".into()),
         ),
         // Fewer signers than the threshold t
         (
@@ -442,7 +484,7 @@ fn test_sign_rejects_invalid_inputs() {
             0,
             0,
             0,
-            Value("The number of signers must be between t and n.".into()),
+            Value("The number of signers must satisfy t <= u <= n.".into()),
         ),
         // Secret share is out of range (zero)
         (
@@ -451,13 +493,13 @@ fn test_sign_rejects_invalid_inputs() {
             vec![],
             0,
             0,
-            1,
-            Value("The signer's secret share value is out of range.".into()),
+            2,
+            Value("The secshare is out of range.".into()),
         ),
     ] {
         let key = key_material();
         let signer = SignerStep1State {
-            idx: my_id,
+            idx: signer_id,
             t: key.t,
             secshare: parse_scalar_hex(secshares[secshare_index]).unwrap(),
             pubshares: pubshares.iter().map(|&i| pubshare_pool[i]).collect(),
@@ -483,24 +525,24 @@ fn test_sign_rejects_invalid_inputs() {
 fn test_verify_rejects_invalid_partial_signature() {
     let key = key_material();
     let pubnonce_pool = [
-        "03295054A682346C6A55DC184F463E48FEB38B23659E84A725604E570044487192021F8C6DC6DF28F187E52F796A4C189867797DB7D9E86796586F5A5FB6D4006597",
-        "028D0DD00F4DD83ACE58ECA8197EC7CD0B94C9F53081E6394168EB37BE5DAAE5B7025224420D478FA5230C172FD625930B34A2343B335EAF2D3080D7B8DA71245CAE",
-        "022A6084A7614CDBA50397DFFC922AFB40CB848AE3341D5EA2F6E8BEA5ECAC1B9D02298852FE90C793305C4B7E02F80DC04BD29CBEA7FD99972993172AE030384151",
+        "028213A4194E3A70790607123B9A6D7A3363A62B8117C2DA1AFB40DE5B0EE4E06002EBAD9B1A145E503BCF05A4D05DB99E6B1A30098F26FA6305CDE8D59B32DBAC43",
+        "02FB84325E2E570263DD8C1772FD17E810C0E938EEBFD0FA4AF39FB58507A5D48003FAD5DDF645F8197F9336480F34D928C2F69B1C44D88A8B1C57E93206CBDDF23D",
+        "03B64B264AD117E20AD57BDC5A7EA33701CF1D6C7A7C19A946D082AA7746EFA1D102AD5BDCE55A642497B0932D584E26433722853F1D43387ACEDB4E9559D7CE0FB8",
     ]
     .map(|h| parse_pubnonce_hex(h).unwrap());
     let msg =
         hex::decode("F95466D086770E689964664219266FE5ED215C92AE20BAB5C9D79ADDDDF3C0CF").unwrap();
 
-    for (psig, signers, my_id) in [
+    for (psig, signers, signer_id) in [
         // Negated partial signature fails the verification equation
         (
-            "FB9C49E9C0A16F2F5F6BD25550EC8652431DAE39706F3C157D9F9E5F92BE911B",
+            "4283B4C7E1858318976E3F9B31A9ADB85671953DD6639CDFAA9B964CA50D4039",
             vec![(0, 0), (1, 1)],
             0,
         ),
         // A valid partial signature checked against the wrong signer fails the verification equation
         (
-            "0463B6163F5E90D0A0942DAAAF1379AC77912EAD3ED964264232C02D3D77B026",
+            "BD7C4B381E7A7CE76891C064CE565246643D47A8D8E5035C1536C8402B290108",
             vec![(0, 0), (1, 1)],
             1,
         ),
@@ -510,6 +552,6 @@ fn test_verify_rejects_invalid_partial_signature() {
             .map(|&(id, i)| (id, pubnonce_pool[i].clone()))
             .collect();
         let psig = parse_scalar_hex(psig).unwrap();
-        assert!(verify_one(&key, &psig, my_id, &pubnonces, &msg).is_err());
+        assert!(verify_one(&key, &psig, signer_id, &pubnonces, &msg).is_err());
     }
 }

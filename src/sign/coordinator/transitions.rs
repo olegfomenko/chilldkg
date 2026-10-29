@@ -65,7 +65,7 @@ impl CoordinatorState for CoordinatorStep1State {
         // for the same id; the reference rejects such a list by length.
         chill_dkg_ensure!(
             psigs.len() == self.pubnonces.len(),
-            SignError::Value("invalid number of signatures".into()),
+            SignError::Value("The psigs and ids lists must have the same length.".into()),
         );
 
         let psigs: BTreeMap<usize, PartialSignature> = psigs.into_iter().collect();

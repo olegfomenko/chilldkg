@@ -22,14 +22,12 @@ use k256::{ProjectivePoint, Scalar};
 pub fn lagrange(ids: &[usize], my_id: usize) -> Result<Scalar> {
     chill_dkg_ensure!(
         ids.contains(&my_id),
-        CryptoError::Value(
-            "The signer's id must be present in the participant identifier list.".into()
-        ),
+        CryptoError::Value("The signer's id is missing from the ids list.".into()),
     );
 
     chill_dkg_ensure!(
         ids.iter().all_unique(),
-        CryptoError::Value("The participant identifier list contains duplicate elements.".into()),
+        CryptoError::Value("The ids list contains duplicate elements.".into()),
     );
 
     lagrange_internal(ids, my_id)
@@ -65,12 +63,12 @@ fn lagrange_internal(ids: &[usize], my_id: usize) -> Result<Scalar> {
 pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Result<ProjectivePoint> {
     chill_dkg_ensure!(
         ids.len() == pubshares.len(),
-        CryptoError::Value("The pubshares and ids arrays must have the same length.".into()),
+        CryptoError::Value("The pubshares and ids lists must have the same length.".into()),
     );
 
     chill_dkg_ensure!(
         ids.iter().all_unique(),
-        CryptoError::Value("The participant identifier list contains duplicate elements.".into()),
+        CryptoError::Value("The ids list contains duplicate elements.".into()),
     );
 
     let Q = pubshares
@@ -79,10 +77,10 @@ pub fn interpolate_pubkey(ids: &[usize], pubshares: &[ProjectivePoint]) -> Resul
         .map(|(X_i, i)| Ok(X_i * &lagrange_internal(ids, *i)?))
         .sum::<Result<ProjectivePoint>>()?;
 
-    // Q is not the point at infinity except with negligible probability.
+    // Malicious public shares can interpolate to the identity;
     chill_dkg_ensure!(
         !bool::from(Q.is_identity()),
-        CryptoError::Runtime("interpolated public key is the identity point".into()),
+        CryptoError::Value("The threshold public key must not be the point at infinity.".into()),
     );
 
     Ok(Q)

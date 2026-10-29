@@ -59,13 +59,15 @@ impl SecNonce {
 ///
 /// All inputs are optional but strongly recommended: mixing the secret share
 /// into the randomness protects against a weak RNG, and binding the nonce to
-/// the public share, the (tweaked) threshold key, the message and any extra
-/// input protects against some misuse. `secshare`, when given, must be the
-/// signer's DKG secret share; `pubshare` its public share and `thresh_pk` the
-/// (tweaked) threshold key the session will sign under.
+/// the signer's id, the public share, the (tweaked) threshold key, the message
+/// and any extra input protects against some misuse. `secshare`, when given,
+/// must be the signer's DKG secret share; `signer_id` its participant id,
+/// `pubshare` its public share and `thresh_pk` the (tweaked) threshold key
+/// the session will sign under.
 pub fn sample_nonce(
     rng: &mut impl CryptoRngCore,
     secshare: Option<&Scalar>,
+    signer_id: Option<usize>,
     pubshare: Option<&ProjectivePoint>,
     thresh_pk: Option<&ProjectivePoint>,
     msg: Option<&[u8]>,
@@ -73,12 +75,15 @@ pub fn sample_nonce(
 ) -> Result<(PubNonce, SecNonce)> {
     let mut rand_ = Zeroizing::new([0u8; 32]);
     rng.fill_bytes(rand_.as_mut());
-    sample_nonce_internal(rand_, secshare, pubshare, thresh_pk, msg, extra_in)
+    sample_nonce_internal(
+        rand_, secshare, signer_id, pubshare, thresh_pk, msg, extra_in,
+    )
 }
 
 pub(crate) fn sample_nonce_internal(
     mut rand: Zeroizing<[u8; 32]>,
     secshare: Option<&Scalar>,
+    signer_id: Option<usize>,
     pubshare: Option<&ProjectivePoint>,
     thresh_pk: Option<&ProjectivePoint>,
     msg: Option<&[u8]>,
@@ -92,8 +97,8 @@ pub(crate) fn sample_nonce_internal(
         }
     }
 
-    let k1 = nonce_hash(&rand, pubshare, thresh_pk, msg, extra_in, 0)?;
-    let k2 = nonce_hash(&rand, pubshare, thresh_pk, msg, extra_in, 1)?;
+    let k1 = nonce_hash(&rand, signer_id, pubshare, thresh_pk, msg, extra_in, 0)?;
+    let k2 = nonce_hash(&rand, signer_id, pubshare, thresh_pk, msg, extra_in, 1)?;
 
     // k_1 == 0 or k_2 == 0 cannot occur except with negligible probability.
     chill_dkg_ensure!(
@@ -105,8 +110,9 @@ pub(crate) fn sample_nonce_internal(
     Ok((secnonce.pubnonce(), secnonce))
 }
 
-/// Math: `H_nonce(rand || len1(pubshare) || pubshare || len1(thresh_pk) || thresh_pk
-///                 || msg_prefixed || len4(extra_in) || extra_in || i)`,
+/// Math: `H_nonce(rand || len1(signer_id) || signer_id || len1(pubshare) || pubshare
+///                 || len1(thresh_pk) || thresh_pk || msg_prefixed
+///                 || len4(extra_in) || extra_in || i)`,
 /// where `msg_prefixed = 0x00` if there is no message, else `0x01 || len8(msg) || msg`.
 ///
 /// Absent optional inputs are hashed as empty byte strings (their length
@@ -114,6 +120,7 @@ pub(crate) fn sample_nonce_internal(
 /// so "no message" and "empty message" differ.
 fn nonce_hash(
     rand: &[u8; 32],
+    signer_id: Option<usize>,
     pubshare: Option<&ProjectivePoint>,
     thresh_pk: Option<&ProjectivePoint>,
     msg: Option<&[u8]>,
@@ -122,6 +129,14 @@ fn nonce_hash(
 ) -> Result<SecretScalar> {
     let mut hash = tagged_hasher(TAG_FROST_NONCE);
     hash.update(rand);
+
+    match signer_id {
+        Some(id) => {
+            hash.update([4u8]);
+            hash.update((id as u32).to_be_bytes());
+        }
+        None => hash.update([0u8]),
+    }
 
     match pubshare {
         Some(p) => {

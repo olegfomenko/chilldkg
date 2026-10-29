@@ -46,7 +46,7 @@ pub mod party;
 
 pub use crate::crypto::tweak::Tweak;
 pub use coordinator::verify::{
-    aggr_pubnonces, partial_verify, signing_pubkey, validate_signers, verify,
+    MAX_PARTICIPANTS, aggr_pubnonces, partial_verify, signing_pubkey, validate_signers, verify,
 };
 pub use coordinator::{CoordinatorInitialState, CoordinatorState, CoordinatorStep1State};
 pub use errors::{Result, SignError};

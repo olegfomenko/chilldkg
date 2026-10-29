@@ -22,12 +22,17 @@ use itertools::Itertools;
 use k256::elliptic_curve::Group;
 use k256::{ProjectivePoint, Scalar};
 
+/// Upper bound on the number of participants `n`. BIP445 bounds `n` at 128,
+/// the range in which the LDVR problem underlying adaptive security is
+/// provably hard.
+pub const MAX_PARTICIPANTS: usize = 128;
+
 /// Checks that `ids` is a valid signing subset for the key material:
-/// `t <= |ids| <= n`, every id is in range, no duplicates, no identity
-/// public share, and the subset's public shares interpolate to the
-/// threshold key.
+/// `1 <= t <= n <= 128`, `t <= |ids| <= n`, every id is in range, no
+/// duplicates, no identity public share, and the subset's public shares
+/// interpolate to the threshold key.
 ///
-/// Mirrors the reference `validate_signers_ctx`.
+/// Mirrors the reference `validate_session_params`.
 pub fn validate_signers(
     t: usize,
     pubshares: &[ProjectivePoint],
@@ -40,31 +45,40 @@ pub fn validate_signers(
         SignError::Value("The threshold must be 1 <= t <= n.".into()),
     );
     chill_dkg_ensure!(
+        n <= MAX_PARTICIPANTS,
+        SignError::Value(
+            format!("The number of participants must be n <= {MAX_PARTICIPANTS}.").into()
+        ),
+    );
+    chill_dkg_ensure!(
         t <= ids.len() && ids.len() <= n,
-        SignError::Value("The number of signers must be between t and n.".into()),
+        SignError::Value("The number of signers must satisfy t <= u <= n.".into()),
     );
     for (idx, &id) in ids.iter().enumerate() {
         chill_dkg_ensure!(
             id < n,
             SignError::Value(
-                format!("The participant identifier at index {idx} is out of range.").into()
+                format!("The id at index {idx} must satisfy 0 <= id <= n - 1.").into()
             ),
         );
         chill_dkg_ensure!(
             !bool::from(pubshares[id].is_identity()),
-            SignError::Value(format!("Invalid pubshare at index {idx}.").into()),
+            SignError::Value(format!("The pubshare at index {idx} is not a valid point.").into()),
         );
     }
 
     chill_dkg_ensure!(
         ids.iter().all_unique(),
-        SignError::Value("The participant identifier list contains duplicate elements.".into()),
+        SignError::Value("The ids list contains duplicate elements.".into()),
     );
 
     let pubshares: Vec<ProjectivePoint> = ids.iter().map(|&id| pubshares[id]).collect();
     chill_dkg_ensure!(
         &interpolate_pubkey(ids, &pubshares)? == threshold_pubkey,
-        SignError::Value("The provided key material is incorrect.".into()),
+        SignError::Value(
+            "The provided key material is incorrect: the public shares do not match the threshold public key."
+                .into()
+        ),
     );
     Ok(())
 }
@@ -112,7 +126,8 @@ pub fn verify(
 /// Nonce coefficient and final nonce of the session, from the signing subset
 /// (in any order; committed to as a set) and the aggregate nonce.
 ///
-/// Math: `b = H_noncecoef(ser_ids || aggnonce || Q_x || msg)` where ser_ids is
+/// Math: `b = H_noncecoef(len4(ids) || ser_ids || aggnonce || Q_x || msg)` where
+/// `len4(ids)` is the signer count as a 4-byte big-endian integer, ser_ids is
 /// the sorted ids as 4-byte big-endian integers (a set, per ROAST) and aggnonce
 /// is `R_1 || R_2` compressed with the identity as 33 zero bytes;
 /// `R = R_1 + b * R_2`, or `G` if that is the identity. Fails if `b` is zero, which
@@ -134,6 +149,7 @@ pub fn signing_nonce(
     let b = reduce_scalar_from_bytes(tagged_hash(
         TAG_FROST_NONCECOEF,
         [
+            &(ids.len() as u32).to_be_bytes(),
             ser_ids.as_slice(),
             &compress_default(&R1),
             &compress_default(&R2),
