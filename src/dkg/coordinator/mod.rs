@@ -107,8 +107,17 @@ impl CoordinatorInitialState {
         Ok(())
     }
 
-    /// Recover coordinator's DKG output from successful-session recovery data.
+    /// Recover this coordinator's DKG output from successful-session recovery
+    /// data.
     pub fn recover(&self, recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
+        chill_dkg_ensure!(
+            recovery_data.transcript.t == self.t
+                && recovery_data.transcript.host_pubkeys == self.host_pubkeys,
+            ChillDkgError::RecoveryData(
+                "Recovery data does not match the provided session parameters".into()
+            ),
+        );
+
         recover(recovery_data)
     }
 }

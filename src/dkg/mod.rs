@@ -301,6 +301,12 @@ impl Coordinator {
     /// the public [`CoordinatorDKGOutput`] (threshold
     /// public key and public shares) from a successful session's
     /// [`RecoveryData`].
+    ///
+    /// Note that it does not check which
+    /// session the data belongs to. Before relying on
+    /// the output, check that `recovery_data.transcript.host_pubkeys` and
+    /// `recovery_data.transcript.t` are the session you expect, or use
+    /// [`CoordinatorInitialState::recover`], which checks them for you.
     pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
         coordinator::recovery::recover(recovery_data)
     }

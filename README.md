@@ -189,7 +189,9 @@ fn main() -> Result<()> {
     // Participant's output, from its host secret key and the recovery data
     let p_output_recovered = Participant::recover(&host_seckey, &recovery_data)?;
 
-    // Coordinator's output, from the recovery data alone
+    // Coordinator's output, from the recovery data alone. This does not check which
+    // session the data is for: compare recovery_data.transcript.host_pubkeys and .t with
+    // the session you expect, or use CoordinatorInitialState::recover, which does
     let c_output_recovered = Coordinator::recover(&recovery_data)?;
 }
 ```
@@ -619,6 +621,11 @@ differences:
   recovery.
 - Recovery transcript parsing is stricter for public nonces. This may change
   which error is returned for malformed recovery bytes.
+- The reference `coordinator_recover` returns the recovered session parameters next to the
+  output. Our `Coordinator::recover` returns only the output; the parameters stay readable
+  in `recovery_data.transcript`. `CoordinatorInitialState::recover` also rejects recovery
+  data whose `t` or ordered host public keys differ from the state's, with the reference's
+  "does not match the provided session parameters" error.
 - The coordinator verifies every participant's proof of possession at step 1 and reports
   the first invalid one as `FaultyParticipant` naming that participant. The reference
   coordinator forwards the PoPs unchecked, so an invalid one is only found by the
