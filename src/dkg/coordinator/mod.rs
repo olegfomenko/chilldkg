@@ -2,6 +2,8 @@
 
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
+use crate::crypto::pop::PopVerifier;
+use crate::crypto::schnorr::SchnorrVerifier;
 use crate::dkg::ParticipantInitialState;
 use crate::dkg::coordinator::recovery::recover;
 use crate::dkg::errors::{ChillDkgError, Result};
@@ -81,6 +83,25 @@ impl CoordinatorInitialState {
                     },
                 );
             }
+        }
+
+        // Unlike the reference, the coordinator also verifies every proof of
+        // possession, so an invalid one is blamed on exactly that participant
+        // (participants can only blame "participant or coordinator"). This also
+        // catches a participant that cancels the aggregate C_0 to the identity,
+        // which the reference cannot handle. Participants still verify the PoPs
+        // themselves, since the coordinator is untrusted. Run after the checks
+        // above so inputs the reference rejects keep the reference's error.
+        for (i, p_msg) in msgs.iter().enumerate() {
+            chill_dkg_ensure!(
+                PopVerifier::new(p_msg.commitment[0], i as u32)
+                    .verify(p_msg.pop)
+                    .is_ok(),
+                ChillDkgError::FaultyParticipant {
+                    participant: i,
+                    message: "Participant sent invalid proof-of-knowledge".into(),
+                },
+            );
         }
 
         Ok(())

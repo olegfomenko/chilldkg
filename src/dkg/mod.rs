@@ -307,10 +307,12 @@ impl Coordinator {
 
     /// Runs the coordinator's first round.
     ///
-    /// Aggregates the participants' [`ParticipantMsg1`]
-    /// messages and produces the [`CoordinatorMsg1`] to
-    /// broadcast back to them. On error the coordinator moves to the failed
-    /// state.
+    /// Checks the participants' [`ParticipantMsg1`] messages, including every
+    /// proof of possession, then aggregates them and produces the
+    /// [`CoordinatorMsg1`] to broadcast back to them. A malformed message or
+    /// an invalid proof of possession is reported as
+    /// [`ChillDkgError::FaultyParticipant`] naming that participant. On error
+    /// the coordinator moves to the failed state.
     pub fn step1(
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,

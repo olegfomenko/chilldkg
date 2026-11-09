@@ -76,10 +76,10 @@ messaging rounds between the participants and the coordinator:
 
 1. Every participant, knowing all host public keys and `t`, samples its VSS polynomial,
    encrypts a share for every other participant and sends `ParticipantMsg1`.
-2. The coordinator aggregates the first-round messages into `CoordinatorMsg1` and
-   broadcasts it. Every participant verifies the commitments and proofs of possession,
-   decrypts its shares, derives its secret share and signs the session transcript,
-   sending `ParticipantMsg2`.
+2. The coordinator checks the first-round messages, including every proof of possession,
+   aggregates them into `CoordinatorMsg1` and broadcasts it. Every participant verifies the
+   commitments and proofs of possession, decrypts its shares, derives its secret share and
+   signs the session transcript, sending `ParticipantMsg2`.
 3. The coordinator collects the transcript signatures into the certificate
    `CoordinatorMsg2`, obtains `CoordinatorDKGOutput` and `RecoveryData`, and broadcasts the
    certificate. Every participant verifies it and obtains its `DKGOutput` and the same
@@ -619,6 +619,13 @@ differences:
   recovery.
 - Recovery transcript parsing is stricter for public nonces. This may change
   which error is returned for malformed recovery bytes.
+- The coordinator verifies every participant's proof of possession at step 1 and reports
+  the first invalid one as `FaultyParticipant` naming that participant. The reference
+  coordinator forwards the PoPs unchecked, so an invalid one is only found by the
+  participants, who can blame only "that participant or the coordinator". The PoP check
+  runs after the other message checks, so inputs the reference coordinator rejects get
+  the same error here. Participants still verify all PoPs, because the coordinator is
+  untrusted.
 
 The signing module follows the reference `nonce_gen`, nonce aggregation, tweaking, `sign`
 and `partial_sig_verify` logic, including the signer's self-check of its own partial
