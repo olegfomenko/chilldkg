@@ -16,8 +16,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 /// A signer's secret nonce pair.
 ///
-/// Deliberately neither `Clone` nor `Copy`: the signing step of [`SignerStep1State`](crate::sign::SignerStep1State)
-/// consumes it, so a nonce cannot be used for two signatures. Wiped on drop.
+/// Deliberately neither `Clone` nor `Copy`. [`partial_sign`](crate::sign::partial_sign)
+/// overwrites it with zeros once it has been read, so the same value cannot
+/// sign twice. Also wiped on drop. A nonce rebuilt from saved `k1`/`k2` can
+/// still sign, and must never be used for a second signature: that leaks the
+/// secret share.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecNonce {
     /// Math: `k_1`.

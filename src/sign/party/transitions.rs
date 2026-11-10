@@ -70,8 +70,10 @@ impl SignerState for SignerStep1State {
 
     /// Round 2: checks the message and tweaks against what the nonce was
     /// bound to, then produces the partial signature (see
-    /// [`partial_sign`]). Consumes the secret nonce.
-    fn next(self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
+    /// [`partial_sign`]). Consumes the state and wipes the secret nonce.
+    /// Run it at most once per state, and never on a state rebuilt from saved
+    /// fields: see [`SignerStep1State`].
+    fn next(mut self, msg: Self::Message) -> Result<(Option<Self::Next>, Self::Output)> {
         let (pubnonces, msg, tweaks) = msg;
         // The nonce may have been bound to a message and tweaks at round 1;
         // signing anything else with it is refused.
@@ -92,7 +94,7 @@ impl SignerState for SignerStep1State {
             &self.secshare,
             &self.pubshares,
             &self.threshold_pubkey,
-            &self.secnonce,
+            &mut self.secnonce,
             &pubnonces,
             &msg,
             &tweaks,

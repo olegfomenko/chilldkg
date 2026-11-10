@@ -61,7 +61,7 @@ building blocks used by the protocol.
 
 ```toml
 [dependencies]
-chilldkg-rs = { version = "0.6", default-features = false }
+chilldkg-rs = { version = "0.7", default-features = false }
 ```
 
 See [Differences From The Reference Implementation](#differences-from-the-reference-implementation)
@@ -76,10 +76,10 @@ messaging rounds between the participants and the coordinator:
 
 1. Every participant, knowing all host public keys and `t`, samples its VSS polynomial,
    encrypts a share for every other participant and sends `ParticipantMsg1`.
-2. The coordinator aggregates the first-round messages into `CoordinatorMsg1` and
-   broadcasts it. Every participant verifies the commitments and proofs of possession,
-   decrypts its shares, derives its secret share and signs the session transcript,
-   sending `ParticipantMsg2`.
+2. The coordinator checks the first-round messages, including every proof of possession,
+   aggregates them into `CoordinatorMsg1` and broadcasts it. Every participant verifies the
+   commitments and proofs of possession, decrypts its shares, derives its secret share and
+   signs the session transcript, sending `ParticipantMsg2`.
 3. The coordinator collects the transcript signatures into the certificate
    `CoordinatorMsg2`, obtains `CoordinatorDKGOutput` and `RecoveryData`, and broadcasts the
    certificate. Every participant verifies it and obtains its `DKGOutput` and the same
@@ -98,10 +98,20 @@ The crate exposes the protocol at two levels:
 - **State machine** (`ParticipantInitialState` and friends): the consuming state
   transitions the SDK is built on. Each `next` call takes the input for the current step,
   returns the next state and the message produced by that step. Use it when you want to
-  persist or inspect intermediate states yourself.
+  persist or inspect intermediate states yourself. A persisted state can be run again,
+  so the single-use rule below is up to you to keep.
 
 Both use the same messages from `chilldkg_rs::dkg::msg` and the same
 `chilldkg_rs::dkg::ChillDkgError`.
+
+**Every participant state must be used at most once.** In particular, a participant must
+never run step 2 twice in a session. Step 2 signs the session transcript, and a malicious
+coordinator that gets an honest participant to sign two different transcripts can split
+honest participants onto different DKG outputs. If the coordinator asks for the step 2
+message again, resend the one already produced (`Participant::pmsg2` or
+`ParticipantStep2State::pmsg2`). Never re-run step 2 from a saved `ParticipantStep1State`.
+For the same reason, `Participant` and `ParticipantStep1State` are not `Clone`. This is
+the rule BIP-FROST-DKG states as "the state must not be reused".
 
 ### DKG Example
 
@@ -134,6 +144,7 @@ fn main() -> Result<()> {
     let aux = [0u8; 32]; // TODO: generate good randomness
     let msg2 = party.step2((msg1_resp, aux))?;
     // TODO: send msg2, receive msg2_resp from coordinator
+    // If the coordinator asks for msg2 again, resend `party.pmsg2()`; never call step2 again
 
     let (output, recovery) = party.finalize(msg2_resp)?;
     // output holds your secret share; recovery holds the public transcript and certificate
@@ -178,16 +189,19 @@ fn main() -> Result<()> {
     // Participant's output, from its host secret key and the recovery data
     let p_output_recovered = Participant::recover(&host_seckey, &recovery_data)?;
 
-    // Coordinator's output, from the recovery data alone
+    // Coordinator's output, from the recovery data alone. This does not check which
+    // session the data is for: compare recovery_data.transcript.host_pubkeys and .t with
+    // the session you expect, or use CoordinatorInitialState::recover, which does
     let c_output_recovered = Coordinator::recover(&recovery_data)?;
 }
 ```
 
 ### DKG State Machine
 
-Every state implements one of the two traits below. `next` consumes the state, so a step
-cannot be replayed; `Some(next)` is the state for the following round and `None` means the
-session is over.
+Every state implements one of the two traits below. `next` consumes the state in memory;
+`Some(next)` is the state for the following round and `None` means the session is over. A
+persisted or rebuilt state can still be passed to `next` again, and a participant's state
+**must not be**: pass each one to `next` at most once (see the single-use rule above).
 
 ```rust
 pub trait ParticipantState: Sized {
@@ -239,7 +253,9 @@ All transitions return `std::result::Result<T, ChillDkgError>`. Validation or pr
 failures return an error instead of advancing to the next state; the consumed state is
 gone, so the session has to be restarted from the initial state. States are plain structs
 with public fields, so they can be inspected or persisted between rounds. A participant's
-states hold its secret key material and are wiped on drop.
+states hold its secret key material and are wiped on drop. When persisting, store the
+`ParticipantStep2State` in place of the `ParticipantStep1State` before sending `msg2`, and
+answer a coordinator retry with the saved `ParticipantStep2State::pmsg2`.
 
 Imports:
 
@@ -278,7 +294,8 @@ fn main() -> Result<()> {
     let aux = [0u8; 32]; // TODO: generate good randomness
     let (next, msg2) = party.next((cmsg1, aux))?;
     let party = next.unwrap();
-    // TODO: share msg2 with the coordinator, receive cmsg2
+    // TODO: persist `party` (it replaces the step 1 state), then share msg2 with the
+    // coordinator and receive cmsg2. On a retry, resend `party.pmsg2`; never re-run step #2
 
     // 4. Execute the final check
     let (_, (participant_output, participant_recovery_data)) = party.next(cmsg2)?;
@@ -342,9 +359,13 @@ Things every user should know:
   coordinator only at round 2. A signer may give them at round 1 too, which binds the nonce
   to them so that round 2 refuses anything else, or pass `None` to generate the nonce
   before they are known.
-- **Nonce reuse.** Reusing a secret nonce leaks the secret share. The nonce lives only in
-  the signer's round-1 state, which is consumed by round 2 and wiped on drop, so it can be
-  used once, for one session. A failed round 2 drops it as well; start a new session.
+- **Nonce reuse.** Reusing a secret nonce leaks the secret share. The nonce lives in the
+  signer's round-1 state, which round 2 consumes, and `partial_sign` overwrites the nonce
+  with zeros once it has read it, so in memory a nonce signs at most once. A failed round 2
+  drops it as well; start a new session. This does not cover saved copies: a round-1 state
+  or `SecNonce` rebuilt from saved fields can sign again, and **must not**. Run round 2 at
+  most once per nonce. If the coordinator asks for the partial signature again, resend the
+  one already produced (`Signer::psig`), never run round 2 again.
 
 As for the DKG, the protocol is exposed at two levels:
 
@@ -386,6 +407,7 @@ fn main() -> Result<()> {
     // TODO: receive the (id, pubnonce) list of all signers from the coordinator
     let psig = signer.finalize((pubnonces, msg.to_vec(), tweaks.clone()))?;
     // TODO: send psig (already paired with this participant's id) to the coordinator
+    // If the coordinator asks for psig again, resend `signer.psig()`; never call finalize again
 }
 ```
 
@@ -480,7 +502,9 @@ stateDiagram-v2
 All transitions return `std::result::Result<T, SignError>`. Validation or protocol failures
 return an error instead of advancing to the next state. Both initial states are built from
 the DKG outputs with `From`; `SignerStep1State` owns the secret nonce and is consumed by the
-signing step, so a nonce cannot be used twice.
+signing step, which wipes the nonce. A saved or rebuilt `SignerStep1State` can still sign
+again, and must not: pass it to `next` at most once, and store the partial signature before
+sending it so that a coordinator retry is answered by resending it.
 
 Imports:
 
@@ -510,11 +534,13 @@ fn main() -> Result<()> {
 
     // TODO: receive the (id, pubnonce) list of all signers from the coordinator
 
-    // Round 2: produce the partial signature. The state (and with it the
-    // secret nonce) is consumed here, so a nonce can never be used twice.
+    // Round 2: produce the partial signature. The state is consumed and the
+    // secret nonce wiped here. Never run this step again from a saved copy of
+    // the state: a second signature with the same nonce leaks the secret share.
     // The message and tweaks must match the ones given at round 1, if any.
     let (_, psig) = signer.next((pubnonces, msg.to_vec(), tweaks.clone()))?;
-    // TODO: send psig (already paired with this participant's id) to the coordinator
+    // TODO: store psig, then send it (already paired with this participant's id) to the
+    // coordinator. On a retry, resend the stored psig
 }
 ```
 
@@ -595,6 +621,18 @@ differences:
   recovery.
 - Recovery transcript parsing is stricter for public nonces. This may change
   which error is returned for malformed recovery bytes.
+- The reference `coordinator_recover` returns the recovered session parameters next to the
+  output. Our `Coordinator::recover` returns only the output; the parameters stay readable
+  in `recovery_data.transcript`. `CoordinatorInitialState::recover` also rejects recovery
+  data whose `t` or ordered host public keys differ from the state's, with the reference's
+  "does not match the provided session parameters" error.
+- The coordinator verifies every participant's proof of possession at step 1 and reports
+  the first invalid one as `FaultyParticipant` naming that participant. The reference
+  coordinator forwards the PoPs unchecked, so an invalid one is only found by the
+  participants, who can blame only "that participant or the coordinator". The PoP check
+  runs after the other message checks, so inputs the reference coordinator rejects get
+  the same error here. Participants still verify all PoPs, because the coordinator is
+  untrusted.
 
 The signing module follows the reference `nonce_gen`, nonce aggregation, tweaking, `sign`
 and `partial_sig_verify` logic, including the signer's self-check of its own partial

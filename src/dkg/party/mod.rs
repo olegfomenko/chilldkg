@@ -3,7 +3,7 @@
 use crate::chill_dkg_ensure;
 use crate::crypto::certeq::CertEQTranscript;
 use crate::dkg::errors::{ChillDkgError, Result};
-use crate::dkg::msg::{CoordinatorMsg1, DKGOutput, RecoveryData};
+use crate::dkg::msg::{CoordinatorMsg1, DKGOutput, ParticipantMsg2, RecoveryData};
 use crate::dkg::party::recovery::recover;
 use k256::elliptic_curve::Group;
 use k256::{NonZeroScalar, ProjectivePoint, Scalar};
@@ -13,6 +13,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub mod recovery;
 pub mod transitions;
 
+/// One step of the participant's side of a ChillDKG session.
+///
+/// `next` consumes the state, but that only prevents reuse of the value in
+/// memory. A state that was persisted and restored, or rebuilt from its public
+/// fields, can be passed to `next` again, and **must not be**: as in
+/// BIP-FROST-DKG, every session state must be passed to `next` at most once.
+/// See [`ParticipantStep1State`] for why this matters.
 pub trait ParticipantState: Sized {
     type Message;
     type Next: ParticipantState;
@@ -50,7 +57,28 @@ impl ParticipantInitialState {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+/// Participant state after step 1, waiting for the coordinator's
+/// [`CoordinatorMsg1`].
+///
+/// **Single use.** Pass this state to [`ParticipantState::next`] at most once.
+/// Never run `next` on a persisted, restored or rebuilt copy of it once a
+/// [`ParticipantMsg2`] produced from it may have been sent. If the coordinator
+/// asks for that message again, resend [`ParticipantStep2State::pmsg2`]
+/// instead.
+///
+/// Step 2 signs the session transcript for the CertEq equality check. If an
+/// honest participant signs two different transcripts, a malicious
+/// coordinator can build a valid certificate for each and split honest
+/// participants onto different DKG outputs (BIP-FROST-DKG: the state "must
+/// not be reused").
+///
+/// For this reason the type is not `Clone`:
+///
+/// ```compile_fail,E0277
+/// fn assert_clone<T: Clone>() {}
+/// assert_clone::<chilldkg_rs::dkg::ParticipantStep1State>();
+/// ```
+#[derive(PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct ParticipantStep1State {
     /// Participant index.
     ///
@@ -83,6 +111,12 @@ pub struct ParticipantStep1State {
     pub com_to_secret: ProjectivePoint,
 }
 
+/// Participant state after step 2, waiting for the coordinator's certificate.
+///
+/// Persist this state in place of the [`ParticipantStep1State`] it came from
+/// before sending [`pmsg2`](Self::pmsg2), so that a coordinator retry is
+/// answered by resending the same message rather than by running step 2
+/// again. Pass it to [`ParticipantState::next`] at most once.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ParticipantStep2State {
     /// Equality-check transcript produced by THIS participant.
@@ -92,6 +126,11 @@ pub struct ParticipantStep2State {
 
     /// Participant's DKG output.
     pub dkg_output: DKGOutput,
+
+    /// The step 2 message produced for `transcript`, i.e. this participant's
+    /// CertEq signature. Resend this message if the coordinator asks for it
+    /// again.
+    pub pmsg2: ParticipantMsg2,
 }
 
 impl ParticipantInitialState {
