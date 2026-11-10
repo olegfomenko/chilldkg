@@ -108,13 +108,21 @@ impl TryFrom<(&[u8], usize)> for CertEQTranscript {
         );
 
         let t = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
+
+        // `t` comes from the input and `n` from the caller, so the expected
+        // length is computed with checked arithmetic. On 32-bit targets
+        // `33 * t` can overflow, which would panic, or wrap and let a bogus `t`
+        // through to the allocations below. An overflow is a length mismatch.
+        let expected_len = COMPRESSED_POINT_BYTES_SIZE
+            .checked_mul(t)
+            .zip(
+                (COMPRESSED_POINT_BYTES_SIZE + COMPRESSED_POINT_BYTES_SIZE + EC_SCALAR_BYTES_SIZE)
+                    .checked_mul(n),
+            )
+            .and_then(|(commitments, per_participant)| commitments.checked_add(per_participant))
+            .and_then(|len| len.checked_add(4));
         chill_dkg_ensure!(
-            bytes.len()
-                == 4 + COMPRESSED_POINT_BYTES_SIZE * t
-                    + (COMPRESSED_POINT_BYTES_SIZE
-                        + COMPRESSED_POINT_BYTES_SIZE
-                        + EC_SCALAR_BYTES_SIZE)
-                        * n,
+            expected_len == Some(bytes.len()),
             CryptoError::Runtime("invalid CertEq transcript length".into()),
         );
 
