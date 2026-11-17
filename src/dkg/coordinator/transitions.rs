@@ -44,6 +44,8 @@ impl CoordinatorState for CoordinatorInitialState {
             enc_secshares,
         };
 
+        // Every PoP is valid at this point (see `validate_participant_msg1`), so
+        // an identity C_0, which fails here, means no participant is honest.
         let (pubtweak, _) = tap_tweak_no_script(&sum_commitment[0])?;
         let mut sum_commitment_tweaked = sum_commitment.clone();
         sum_commitment_tweaked[0] += pubtweak;

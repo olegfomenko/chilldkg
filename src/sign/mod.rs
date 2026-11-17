@@ -31,10 +31,17 @@
 //!
 //! ## Nonce reuse
 //!
-//! Reusing a secret nonce leaks the secret share. The [`SecNonce`] lives only
-//! inside a [`SignerStep1State`], which is consumed by the signing step, so a
-//! nonce can only ever be used once — and only for the message and tweaks it
-//! was generated for. It is wiped from memory when the state is dropped.
+//! Reusing a secret nonce leaks the secret share. The [`SecNonce`] lives
+//! inside a [`SignerStep1State`], which the signing step consumes, and
+//! [`partial_sign`] wipes the nonce it signs with. So in memory a nonce signs
+//! at most once, and only for the message and tweaks it was generated for.
+//!
+//! That guarantee covers only the value in memory. A [`SignerStep1State`] or
+//! [`SecNonce`] rebuilt from saved fields can sign again, and **must not**:
+//! round 2 must run at most once per nonce. If the coordinator asks for the
+//! partial signature again, resend the one already produced
+//! ([`Signer::psig`], or the value you stored when using the state machine).
+//! Never run round 2 again from a saved state.
 //!
 //! Note that a ChillDKG threshold key already commits to an unspendable
 //! Taproot script path, as BIP445 requires of key generation.
@@ -62,12 +69,15 @@ use crate::dkg::msg::{CoordinatorDKGOutput, DKGOutput};
 ///
 /// The signer is advanced with [`Signer::step1`] (nonce) and
 /// [`Signer::finalize`] (partial signature). Each call consumes the current
-/// internal state and produces the next one, so a step can never be run
-/// twice or out of order; doing so returns an error and moves the signer to
-/// a terminal failed state. The secret nonce is dropped, and wiped, with the
-/// state that held it.
+/// internal state and produces the next one, so a step cannot be run twice or
+/// out of order on this driver; doing so returns an error and moves the signer
+/// to a terminal failed state. The secret nonce is wiped when it is used for
+/// signing, and dropped with the state that held it. If the coordinator asks
+/// for the partial signature again, resend it with [`Signer::psig`].
 pub struct Signer {
     state: SignerStateValue,
+    /// The partial signature produced by `finalize`, kept for resending.
+    psig: Option<(usize, PartialSignature)>,
 }
 
 enum SignerStateValue {
@@ -83,6 +93,7 @@ impl Signer {
     pub fn new(output: &DKGOutput) -> Self {
         Self {
             state: SignerStateValue::Initial(SignerInitialState::new(output)),
+            psig: None,
         }
     }
 
@@ -108,11 +119,23 @@ impl Signer {
     /// [`PartialSignature`] (paired with this participant's id) to send back.
     /// The secret nonce is consumed here. Returning an error moves the signer
     /// to the failed state.
+    ///
+    /// This step can run only once per session. To answer a coordinator retry,
+    /// resend the partial signature returned by [`psig`](Signer::psig).
     pub fn finalize(
         &mut self,
         msg: <SignerStep1State as SignerState>::Message,
     ) -> Result<(usize, PartialSignature)> {
-        self.transition::<SignerStep1State>(msg)
+        let psig = self.transition::<SignerStep1State>(msg)?;
+        self.psig = Some(psig);
+        Ok(psig)
+    }
+
+    /// Returns the partial signature (paired with this participant's id)
+    /// produced by [`finalize`](Signer::finalize), and `None` until `finalize`
+    /// has succeeded.
+    pub fn psig(&self) -> Option<(usize, PartialSignature)> {
+        self.psig
     }
 
     fn transition<S>(&mut self, msg: S::Message) -> Result<S::Output>

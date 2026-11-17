@@ -11,6 +11,12 @@ pub mod nonce;
 pub mod sign;
 pub mod transitions;
 
+/// One step of a signer's side of a signing session.
+///
+/// `next` consumes the state, but that only prevents reuse of the value in
+/// memory. A state that was persisted and restored, or rebuilt from its public
+/// fields, can be passed to `next` again, and **must not be**: every signer
+/// state must be passed to `next` at most once. See [`SignerStep1State`].
 pub trait SignerState: Sized {
     type Message;
     type Next: SignerState;
@@ -71,8 +77,21 @@ impl From<&DKGOutput> for SignerInitialState {
 }
 
 /// A participant that has published its nonce and waits for the nonces of
-/// the other signers. Holds the secret nonce; consumed by the next step so a
-/// nonce is never used twice.
+/// the other signers. Holds the secret nonce, which the next step wipes after
+/// signing with it.
+///
+/// **Single use.** Pass this state to [`SignerState::next`] at most once.
+/// Never run `next` on a persisted, restored or rebuilt copy of it once a
+/// partial signature produced from it may have been sent. Two partial
+/// signatures with the same nonce leak the secret share. If the coordinator
+/// asks for the partial signature again, resend the one already produced.
+///
+/// For this reason the type is not `Clone`:
+///
+/// ```compile_fail,E0277
+/// fn assert_clone<T: Clone>() {}
+/// assert_clone::<chilldkg_rs::sign::SignerStep1State>();
+/// ```
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SignerStep1State {
     /// Participant index.

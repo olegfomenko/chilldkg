@@ -31,6 +31,17 @@
 //!
 //! An error from any step transitions the driver to a terminal *failed* state
 //! (see [`Participant::is_failed`]).
+//!
+//! ## Retries and persisted states
+//!
+//! Every participant state must be used at most once. In particular, step 2
+//! must never run twice in a session: if the coordinator asks for the step 2
+//! message again, resend the one already produced
+//! ([`Participant::pmsg2`] or [`ParticipantStep2State::pmsg2`]). Signing two
+//! different transcripts lets a malicious coordinator split honest
+//! participants onto different DKG outputs. When persisting states, replace the
+//! [`ParticipantStep1State`] with the [`ParticipantStep2State`] before sending
+//! the step 2 message.
 
 pub mod coordinator;
 pub mod errors;
@@ -58,15 +69,23 @@ use zeroize::Zeroizing;
 ///
 /// The participant is advanced one round at a time with [`Participant::step1`],
 /// [`Participant::step2`] and [`Participant::finalize`]. Each call consumes the
-/// current internal state and produces the next one, so a step can never be run
-/// twice or out of order; doing so returns an error and moves the participant to
-/// a terminal failed state.
-#[derive(Clone)]
+/// current internal state and produces the next one, so a step cannot be run
+/// twice or out of order on this driver; doing so returns an error and moves
+/// the participant to a terminal failed state. If the coordinator asks for the
+/// step 2 message again, resend it with [`Participant::pmsg2`].
+///
+/// The driver is not `Clone`, because a copy could run step 2 a second time
+/// (see [`ParticipantStep1State`]):
+///
+/// ```compile_fail,E0277
+/// fn assert_clone<T: Clone>() {}
+/// assert_clone::<chilldkg_rs::dkg::Participant>();
+/// ```
 pub struct Participant {
     state: ParticipantStateValue,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 enum ParticipantStateValue {
     Initial(ParticipantInitialState),
     Step1(ParticipantStep1State),
@@ -142,11 +161,24 @@ impl Participant {
     /// ([`CoordinatorMsg1`]) plus auxiliary randomness and
     /// produces the [`ParticipantMsg2`] to send back. On
     /// error the participant moves to the failed state.
+    ///
+    /// This step can run only once per session. To answer a coordinator retry,
+    /// resend the message returned by [`pmsg2`](Participant::pmsg2).
     pub fn step2(
         &mut self,
         msg: <ParticipantStep1State as ParticipantState>::Message,
     ) -> Result<ParticipantMsg2> {
         self.transition::<ParticipantStep1State>(msg)
+    }
+
+    /// Returns the [`ParticipantMsg2`] produced by [`step2`](Participant::step2)
+    /// while the participant waits for the coordinator's certificate, and
+    /// `None` in any other state.
+    pub fn pmsg2(&self) -> Option<&ParticipantMsg2> {
+        match &self.state {
+            ParticipantStateValue::Step2(s) => Some(&s.pmsg2),
+            _ => None,
+        }
     }
 
     /// Completes the session for this participant.
@@ -269,16 +301,24 @@ impl Coordinator {
     /// the public [`CoordinatorDKGOutput`] (threshold
     /// public key and public shares) from a successful session's
     /// [`RecoveryData`].
+    ///
+    /// Note that it does not check which
+    /// session the data belongs to. Before relying on
+    /// the output, check that `recovery_data.transcript.host_pubkeys` and
+    /// `recovery_data.transcript.t` are the session you expect, or use
+    /// [`CoordinatorInitialState::recover`], which checks them for you.
     pub fn recover(recovery_data: &RecoveryData) -> Result<CoordinatorDKGOutput> {
         coordinator::recovery::recover(recovery_data)
     }
 
     /// Runs the coordinator's first round.
     ///
-    /// Aggregates the participants' [`ParticipantMsg1`]
-    /// messages and produces the [`CoordinatorMsg1`] to
-    /// broadcast back to them. On error the coordinator moves to the failed
-    /// state.
+    /// Checks the participants' [`ParticipantMsg1`] messages, including every
+    /// proof of possession, then aggregates them and produces the
+    /// [`CoordinatorMsg1`] to broadcast back to them. A malformed message or
+    /// an invalid proof of possession is reported as
+    /// [`ChillDkgError::FaultyParticipant`] naming that participant. On error
+    /// the coordinator moves to the failed state.
     pub fn step1(
         &mut self,
         msg: <CoordinatorInitialState as CoordinatorState>::Message,

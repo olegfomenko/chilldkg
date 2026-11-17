@@ -196,6 +196,7 @@ impl ParticipantState for ParticipantStep1State {
         );
 
         let sig = CertEQSigner::new(&self.s, &transcript, self.idx, aux).sign()?;
+        let pmsg2 = ParticipantMsg2 { sig };
 
         let dkg_output = DKGOutput {
             idx: self.idx,
@@ -207,9 +208,10 @@ impl ParticipantState for ParticipantStep1State {
         let next_stage = ParticipantStep2State {
             transcript,
             dkg_output,
+            pmsg2: pmsg2.clone(),
         };
 
-        Ok((Some(next_stage), ParticipantMsg2 { sig }))
+        Ok((Some(next_stage), pmsg2))
     }
 }
 
